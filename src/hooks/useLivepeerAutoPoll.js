@@ -4,27 +4,29 @@ import { doc, setDoc } from "firebase/firestore";
 import { api } from "@/lib/api";
 
 export function useLivepeerAutoPoll(channelIdentifier) {
+  const resolvedIdentifier = channelIdentifier || "djsparkz";
+
   useEffect(() => {
     let cancelled = false;
 
     const pollStatus = async () => {
       try {
-        if (!channelIdentifier) return;
+        if (!resolvedIdentifier) return;
 
         // Preferred: Call backend check-status routes which perform Amazon IVS AWS SDK checks
         try {
           let response = await api.post("/ivs/check-status", {
-            channel_id: channelIdentifier,
-            stream_id: channelIdentifier,
-            username: channelIdentifier,
+            channel_id: resolvedIdentifier,
+            stream_id: resolvedIdentifier,
+            username: resolvedIdentifier,
           }).catch(() => null);
 
           // Fallback to legacy route path if the new clean IVS path is not available or errors
           if (!response || !response.data) {
             response = await api.post("/livepeer/check-status", {
-              channel_id: channelIdentifier,
-              stream_id: channelIdentifier,
-              username: channelIdentifier,
+              channel_id: resolvedIdentifier,
+              stream_id: resolvedIdentifier,
+              username: resolvedIdentifier,
             });
           }
 
@@ -44,9 +46,9 @@ export function useLivepeerAutoPoll(channelIdentifier) {
                 { merge: true }
               ).catch(() => {});
 
-              if (channelIdentifier && channelIdentifier !== primaryDocId && channelIdentifier !== "djsparkz") {
+              if (resolvedIdentifier && resolvedIdentifier !== primaryDocId && resolvedIdentifier !== "djsparkz") {
                 await setDoc(
-                  doc(db, "channels", channelIdentifier),
+                  doc(db, "channels", resolvedIdentifier),
                   {
                     is_live: isLive,
                     isLive: isLive,
@@ -67,11 +69,11 @@ export function useLivepeerAutoPoll(channelIdentifier) {
     };
 
     pollStatus();
-    const interval = setInterval(pollStatus, 3000); // Polling every 3 seconds
+    const interval = setInterval(pollStatus, 1500); // Polling every 1.5 seconds for instant updates
 
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [channelIdentifier]);
+  }, [resolvedIdentifier]);
 }

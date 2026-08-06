@@ -23,6 +23,51 @@ function hashPick(str, arr) {
   return arr[Math.abs(h) % arr.length];
 }
 
+function LazyThumbnail({ src, alt, className, referrerPolicy }) {
+  const [isIntersecting, setIsIntersecting] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsIntersecting(true);
+          observer.disconnect();
+        }
+      },
+      {
+        rootMargin: "200px", // pre-load images 200px before they enter the viewport
+      }
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  return (
+    <div ref={ref} className="h-full w-full bg-zinc-950 relative overflow-hidden">
+      {isIntersecting && (
+        <img
+          src={src}
+          alt={alt}
+          referrerPolicy={referrerPolicy}
+          onLoad={() => setIsLoaded(true)}
+          className={`${className} transition-all ${isLoaded ? "opacity-100" : "opacity-0"}`}
+        />
+      )}
+      {!isLoaded && (
+        <div className="absolute inset-0 bg-zinc-950 animate-pulse" />
+      )}
+    </div>
+  );
+}
+
 export default function StreamCarousel({ allChannels = [], channels = [], isLoading = false }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -427,11 +472,11 @@ export default function StreamCarousel({ allChannels = [], channels = [], isLoad
                 >
                   {/* 16:9 Landscape Video Preview/Thumbnail Stage */}
                   <div className="relative aspect-[16/9] w-full overflow-hidden bg-black">
-                    <img
+                    <LazyThumbnail
                       src={finalThumb}
                       alt={channel.display_name || slug}
                       referrerPolicy="no-referrer"
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      className="h-full w-full object-cover duration-500 group-hover:scale-105"
                     />
                     
                     {/* Subtle dark bottom gradient overlay */}

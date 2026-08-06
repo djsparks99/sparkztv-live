@@ -448,10 +448,50 @@ function getCleanUsername(channel) {
 }
 
 function StreamerCard({ channel }) {
+  const [imageError, setImageError] = useState(false);
   const cleanUsername = getCleanUsername(channel);
   const isLive = Boolean(channel.is_live);
   const nextSet = Array.isArray(channel.schedule) && channel.schedule.length > 0 ? channel.schedule[0] : null;
   const channelSlug = cleanUsername;
+
+  // Broadcaster avatar check from various potential API fields
+  const avatarUrl = channel?.photo_url || 
+                    channel?.photoUrl || 
+                    channel?.avatar_url || 
+                    channel?.avatar || 
+                    channel?.profile_image || 
+                    channel?.broadcaster_avatar || 
+                    channel?.user?.avatar_url || 
+                    channel?.user?.photo_url || 
+                    channel?.user?.photoUrl || 
+                    channel?.user?.avatar ||
+                    channel?.user?.profile_image ||
+                    channel?.user?.broadcaster_avatar;
+
+  const resolvedAvatar = avatarUrl ? fileUrl(avatarUrl) : null;
+
+  const initials = (() => {
+    const name = channel?.display_name || channel?.username || channelSlug || "?";
+    const cleanName = typeof name === "string" ? name.trim() : "?";
+    const parts = cleanName.split(/\s+/);
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+      return (parts[0][0] + parts[1][0]).toUpperCase().slice(0, 2);
+    }
+    return cleanName.slice(0, 2).toUpperCase();
+  })();
+
+  const initialsBgColor = (() => {
+    const colors = [
+      "bg-zinc-800 text-zinc-200 border-zinc-700",
+      "bg-zinc-900 text-zinc-300 border-[#27272a]",
+      "bg-neutral-800 text-neutral-200 border-neutral-700",
+      "bg-[#18181b] text-[#e4e4e7] border-[#27272a]",
+    ];
+    let h = 0;
+    const s = channelSlug || "";
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return colors[Math.abs(h) % colors.length];
+  })();
 
   return (
     <div
@@ -462,15 +502,17 @@ function StreamerCard({ channel }) {
         {/* Top Header Row */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            {channel.photo_url ? (
+            {resolvedAvatar && !imageError ? (
               <img
-                src={fileUrl(channel.photo_url)}
+                src={resolvedAvatar}
                 alt={channel.display_name && !isDocId(channel.display_name) ? channel.display_name : cleanUsername}
                 className="h-12 w-12 border border-[#27272a] object-cover grayscale contrast-125 group-hover:grayscale-0 transition-all"
+                referrerPolicy="no-referrer"
+                onError={() => setImageError(true)}
               />
             ) : (
-              <div className="flex h-12 w-12 items-center justify-center border border-[#27272a] bg-black">
-                <User className="h-5 w-5 text-zinc-500" />
+              <div className={`flex h-12 w-12 items-center justify-center border font-mono text-sm font-bold select-none uppercase ${initialsBgColor}`}>
+                {initials}
               </div>
             )}
             <div className="min-w-0">

@@ -333,6 +333,30 @@ async function getMasterChannel() {
   return chan;
 }
 
+let lastLiveCheckTime = 0;
+async function syncMasterChannelLiveStatus(force = false) {
+  const now = Date.now();
+  if (!force && (now - lastLiveCheckTime < 1500)) {
+    return; // Prevent excessive API calls by throttling to at most once per 1.5s
+  }
+  lastLiveCheckTime = now;
+  try {
+    const channel = await getMasterChannel();
+    const client = getIvsClient();
+    if (client && channel?.ivs_channel_arn && !channel.ivs_channel_arn.includes("fallback")) {
+      const response = await client.send(new GetStreamCommand({ channelArn: channel.ivs_channel_arn }));
+      const isLive = !!response.stream;
+      if (channel.is_live !== isLive) {
+        channel.is_live = isLive;
+        await updateFirestoreChannelLiveStatus(isLive);
+        console.log(`[IVS Sync] Auto-synced live status to ${isLive} for ${channel.username}`);
+      }
+    }
+  } catch (err: any) {
+    console.error("[IVS Sync] Error syncing live status:", err.message);
+  }
+}
+
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 export const app = express();
@@ -357,6 +381,7 @@ async function startServer() {
 
   app.get("/api/channels/mine", async (req, res) => {
     try {
+      await syncMasterChannelLiveStatus();
       const channel = await getMasterChannel();
       const publicData = channelPublic(channel, { include_stream_key: true });
       return res.json({
@@ -377,6 +402,7 @@ async function startServer() {
 
   app.get("/api/channels", async (req, res) => {
     try {
+      await syncMasterChannelLiveStatus();
       const masterChannel = await getMasterChannel();
       const channelsList: any[] = [channelPublic(masterChannel)];
 
@@ -414,6 +440,7 @@ async function startServer() {
 
   app.get("/api/channels/:id", async (req, res) => {
     try {
+      await syncMasterChannelLiveStatus();
       const requestedId = req.params.id;
       const normalizedId = (requestedId || "").toLowerCase().trim();
 
@@ -455,21 +482,8 @@ async function startServer() {
 
   app.post("/api/ivs/check-status", async (req, res) => {
     try {
+      await syncMasterChannelLiveStatus(true);
       const channel = await getMasterChannel();
-      const client = getIvsClient();
-      
-      if (client && channel?.ivs_channel_arn && !channel.ivs_channel_arn.includes("fallback")) {
-        const response = await client.send(new GetStreamCommand({ channelArn: channel.ivs_channel_arn }));
-        const isLive = !!response.stream;
-        
-        if (channel.is_live !== isLive) {
-          channel.is_live = isLive;
-          await updateFirestoreChannelLiveStatus(isLive);
-        }
-        
-        return res.json({ isActive: isLive, isLive, is_live: isLive, stream: response.stream });
-      }
-      
       return res.json({ isActive: channel.is_live, isLive: channel.is_live, is_live: channel.is_live });
     } catch (e) {
       const channel = await getMasterChannel();

@@ -106,8 +106,8 @@ export default function Browse() {
         });
     };
 
-    // Poll every 3 seconds
-    const intervalId = setInterval(fetchFromBackend, 3000);
+    // Poll every 1.5 seconds for rapid status updates
+    const intervalId = setInterval(fetchFromBackend, 1500);
     return () => clearInterval(intervalId);
   }, []);
 

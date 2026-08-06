@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Eye, User } from "lucide-react";
 import { fileUrl } from "@/lib/api";
@@ -47,11 +48,52 @@ function getCleanUsername(channel) {
 }
 
 export default function ChannelCard({ channel }) {
+  const [imageError, setImageError] = useState(false);
   const channelSlug = getCleanUsername(channel);
   const thumb = channel?.thumbnail_url
     ? fileUrl(channel.thumbnail_url)
     : hashPick(channelSlug, THUMBS);
   const customThumb = !!channel?.thumbnail_url;
+
+  // Broadcaster avatar check from various potential API fields
+  const avatarUrl = channel?.photo_url || 
+                    channel?.photoUrl || 
+                    channel?.avatar_url || 
+                    channel?.avatar || 
+                    channel?.profile_image || 
+                    channel?.broadcaster_avatar || 
+                    channel?.user?.avatar_url || 
+                    channel?.user?.photo_url || 
+                    channel?.user?.photoUrl || 
+                    channel?.user?.avatar ||
+                    channel?.user?.profile_image ||
+                    channel?.user?.broadcaster_avatar;
+
+  const resolvedAvatar = avatarUrl ? fileUrl(avatarUrl) : null;
+
+  const initials = (() => {
+    const name = channel?.display_name || channel?.username || channelSlug || "?";
+    const cleanName = typeof name === "string" ? name.trim() : "?";
+    const parts = cleanName.split(/\s+/);
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+      return (parts[0][0] + parts[1][0]).toUpperCase().slice(0, 2);
+    }
+    return cleanName.slice(0, 2).toUpperCase();
+  })();
+
+  const initialsBgColor = (() => {
+    const colors = [
+      "bg-zinc-800 text-zinc-200 border-zinc-700",
+      "bg-zinc-900 text-zinc-300 border-zinc-850",
+      "bg-neutral-800 text-neutral-200 border-neutral-700",
+      "bg-[#18181b] text-[#e4e4e7] border-[#27272a]",
+    ];
+    let h = 0;
+    const s = channelSlug || "";
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return colors[Math.abs(h) % colors.length];
+  })();
+
   return (
     <Link
       to={`/channel/${channelSlug}`}
@@ -82,15 +124,17 @@ export default function ChannelCard({ channel }) {
         )}
       </div>
       <div className="flex items-start gap-3 p-4">
-        {channel.photo_url ? (
+        {resolvedAvatar && !imageError ? (
           <img
-            src={fileUrl(channel.photo_url)}
+            src={resolvedAvatar}
             alt=""
             className="h-10 w-10 flex-shrink-0 border border-[#27272a] object-cover grayscale group-hover:grayscale-0"
+            referrerPolicy="no-referrer"
+            onError={() => setImageError(true)}
           />
         ) : (
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center border border-[#27272a] bg-black">
-            <User className="h-4 w-4 text-zinc-500" />
+          <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center border font-mono text-xs font-bold select-none uppercase ${initialsBgColor}`}>
+            {initials}
           </div>
         )}
         <div className="min-w-0 flex-1">
