@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -26,6 +26,7 @@ const CATEGORIES = [
 
 export default function Browse() {
   const { user } = useAuth();
+  const hasLoadedOnceRef = useRef(false);
   const [category, setCategory] = useState(null);
   const [liveOnly, setLiveOnly] = useState(true);
   const [followingOnly, setFollowingOnly] = useState(false);
@@ -33,7 +34,7 @@ export default function Browse() {
   const [rawChannels, setRawChannels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [backendLoading, setBackendLoading] = useState(true);
-  const isScreenLoading = loading || backendLoading;
+  const isScreenLoading = (loading || backendLoading) && !hasLoadedOnceRef.current;
 
   useLivepeerAutoPoll();
   useMetaTags({
@@ -105,15 +106,17 @@ export default function Browse() {
         });
     };
 
-    // Poll every 10 seconds
-    const intervalId = setInterval(fetchFromBackend, 10000);
+    // Poll every 3 seconds
+    const intervalId = setInterval(fetchFromBackend, 3000);
     return () => clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setBackendLoading(true);
+    if (!hasLoadedOnceRef.current) {
+      setLoading(true);
+      setBackendLoading(true);
+    }
 
     api.get("/channels")
       .then(() => {
@@ -178,6 +181,7 @@ export default function Browse() {
         );
         setRawChannels(cleaned);
         setLoading(false);
+        hasLoadedOnceRef.current = true;
       },
       (err) => {
         if (!active) return;
@@ -196,9 +200,13 @@ export default function Browse() {
             );
             setRawChannels(cleaned);
             setLoading(false);
+            hasLoadedOnceRef.current = true;
           })
           .catch(() => {
-            if (active) setLoading(false);
+            if (active) {
+              setLoading(false);
+              hasLoadedOnceRef.current = true;
+            }
           });
       }
     );

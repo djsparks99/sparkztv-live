@@ -9,6 +9,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { WebSocketServer, WebSocket as WSWebSocket } from "ws";
+import admin from "firebase-admin";
 
 import { 
   IvsClient, 
@@ -20,6 +21,51 @@ import {
 } from "@aws-sdk/client-ivs";
 
 dotenv.config();
+
+// Initialize Firebase Admin for real-time Firestore synchronization
+let dbFirestore: any = null;
+try {
+  const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(firebaseConfigPath)) {
+    const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
+    if (firebaseConfig.projectId) {
+      admin.initializeApp({
+        projectId: firebaseConfig.projectId,
+      });
+      if (firebaseConfig.firestoreDatabaseId) {
+        dbFirestore = admin.firestore(firebaseConfig.firestoreDatabaseId as any);
+      } else {
+        dbFirestore = admin.firestore();
+      }
+      console.log("[Firebase Admin] Initialized successfully with projectId:", firebaseConfig.projectId);
+    }
+  }
+} catch (e: any) {
+  console.warn("[Firebase Admin] Failed to initialize firebase-admin:", e.message);
+}
+
+async function updateFirestoreChannelLiveStatus(isLive: boolean) {
+  try {
+    if (dbFirestore) {
+      const primaryDocId = "nsU1v44XFnN3FloJvNePqj6cBG2";
+      const nowIso = new Date().toISOString();
+      
+      const updatePayload = {
+        is_live: isLive,
+        isLive: isLive,
+        last_updated: nowIso,
+      };
+
+      // Update both document keys to cover all lookup types
+      await dbFirestore.collection("channels").doc(primaryDocId).set(updatePayload, { merge: true });
+      await dbFirestore.collection("channels").doc("djsparkz").set(updatePayload, { merge: true });
+      
+      console.log(`[Firebase Admin] Successfully set channel live status to ${isLive} in Firestore.`);
+    }
+  } catch (e: any) {
+    console.error("[Firebase Admin] Failed to update Firestore channel status:", e.message);
+  }
+}
 
 console.log("SPARKZ.TV - Server booting up with universal avatar sync.");
 
@@ -415,7 +461,12 @@ async function startServer() {
       if (client && channel?.ivs_channel_arn && !channel.ivs_channel_arn.includes("fallback")) {
         const response = await client.send(new GetStreamCommand({ channelArn: channel.ivs_channel_arn }));
         const isLive = !!response.stream;
-        channel.is_live = isLive;
+        
+        if (channel.is_live !== isLive) {
+          channel.is_live = isLive;
+          await updateFirestoreChannelLiveStatus(isLive);
+        }
+        
         return res.json({ isActive: isLive, isLive, is_live: isLive, stream: response.stream });
       }
       
@@ -423,6 +474,62 @@ async function startServer() {
     } catch (e) {
       const channel = await getMasterChannel();
       return res.json({ isActive: channel.is_live, isLive: channel.is_live, is_live: channel.is_live });
+    }
+  });
+
+  app.post("/api/webhook/stream-end", async (req, res) => {
+    try {
+      console.log("[Webhook] Received explicit stream-end signal:", req.body);
+      const channel = await getMasterChannel();
+      channel.is_live = false;
+      await updateFirestoreChannelLiveStatus(false);
+      return res.json({ success: true, message: "Stream status set to offline instantly." });
+    } catch (err: any) {
+      return res.status(500).json({ error: "Failed to clear stream status", details: err.message });
+    }
+  });
+
+  app.post("/api/ivs/webhook", async (req, res) => {
+    try {
+      const payload = req.body || {};
+      const eventName = payload.detail?.event_name || payload.eventName || payload.event || "";
+      console.log("[IVS Webhook] Received webhook event:", eventName, payload);
+      
+      const channel = await getMasterChannel();
+      
+      if (eventName === "Stream End" || eventName === "Session Ended" || eventName.toLowerCase().includes("end") || eventName === "stream.idle") {
+        channel.is_live = false;
+        await updateFirestoreChannelLiveStatus(false);
+      } else if (eventName === "Stream Start" || eventName === "Session Started" || eventName.toLowerCase().includes("start") || eventName === "stream.started") {
+        channel.is_live = true;
+        await updateFirestoreChannelLiveStatus(true);
+      }
+      
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: "Webhook processing failed", details: err.message });
+    }
+  });
+
+  app.post("/api/livepeer/webhook", async (req, res) => {
+    try {
+      const payload = req.body || {};
+      const eventName = payload.event || "";
+      console.log("[Livepeer Webhook] Received event:", eventName, payload);
+      
+      const channel = await getMasterChannel();
+      
+      if (eventName === "stream.idle" || eventName.toLowerCase().includes("end")) {
+        channel.is_live = false;
+        await updateFirestoreChannelLiveStatus(false);
+      } else if (eventName === "stream.started" || eventName.toLowerCase().includes("start")) {
+        channel.is_live = true;
+        await updateFirestoreChannelLiveStatus(true);
+      }
+      
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: "Webhook processing failed", details: err.message });
     }
   });
 

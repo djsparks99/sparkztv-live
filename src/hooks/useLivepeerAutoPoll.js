@@ -67,7 +67,7 @@ export function useLivepeerAutoPoll(channelIdentifier) {
     };
 
     pollStatus();
-    const interval = setInterval(pollStatus, 10000); // Polling every 10 seconds
+    const interval = setInterval(pollStatus, 3000); // Polling every 3 seconds
 
     return () => {
       cancelled = true;

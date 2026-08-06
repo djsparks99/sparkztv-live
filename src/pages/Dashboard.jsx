@@ -115,7 +115,7 @@ export default function Dashboard() {
           });
         })
         .catch(() => {});
-    }, 5000);
+    }, 2000);
     return () => clearInterval(t);
   }, []);
 
