@@ -192,6 +192,7 @@ interface UserDoc {
   username: string;
   display_name: string;
   photo_url: string | null;
+  social_share_image_url?: string | null;
   bio: string;
   password_hash: string;
   created_at: string;
@@ -235,6 +236,7 @@ class InMemStore {
       username: "djsparkz",
       display_name: "djsparkz",
       photo_url: null,
+      social_share_image_url: null,
       bio: "Broadcasting live and loud on SPARKZ.TV",
       password_hash: bcrypt.hashSync("password123", 8),
       created_at: now,
@@ -691,6 +693,10 @@ async function startServer() {
         user.bio = req.body.bio;
         db.users.set(user.uid, user);
       }
+      if (req.body?.social_share_image_url !== undefined) {
+        user.social_share_image_url = req.body.social_share_image_url;
+        db.users.set(user.uid, user);
+      }
 
       return res.json({
         ...user,
@@ -700,6 +706,8 @@ async function startServer() {
         photoUrl: user.photo_url,
         avatar: user.photo_url,
         avatar_url: user.photo_url,
+        social_share_image_url: user.social_share_image_url || null,
+        socialShareImageUrl: user.social_share_image_url || null,
       });
     } catch (err: any) {
       return res.status(500).json({ error: "Failed to update user profile", details: err.message });
@@ -845,6 +853,8 @@ async function startServer() {
       photoUrl: user.photo_url,
       avatar: user.photo_url,
       avatar_url: user.photo_url,
+      social_share_image_url: user.social_share_image_url || null,
+      socialShareImageUrl: user.social_share_image_url || null,
     });
   });
 
@@ -893,6 +903,44 @@ async function startServer() {
 
   api.post("/users/me/photo", authMiddleware, upload.single("photo"), handlePhotoUpload);
   api.put("/users/me/photo", authMiddleware, upload.single("photo"), handlePhotoUpload);
+
+  const handleSocialShareUpload = async (req: any, res: Response) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      let socialShareUrl = user.social_share_image_url || null;
+
+      if (req.file) {
+        socialShareUrl = `/api/files/${req.file.filename}`;
+      } else if (req.body?.social_share_image_url || req.body?.socialShareImageUrl || req.body?.image) {
+        socialShareUrl = req.body.social_share_image_url || req.body.socialShareImageUrl || req.body.image;
+      }
+
+      user.social_share_image_url = socialShareUrl;
+      db.users.set(user.uid, user);
+
+      return res.json({
+        success: true,
+        social_share_image_url: socialShareUrl,
+        socialShareImageUrl: socialShareUrl,
+        user: {
+          ...user,
+          username: user.username,
+          display_name: user.display_name,
+          photo_url: user.photo_url,
+          social_share_image_url: socialShareUrl,
+          socialShareImageUrl: socialShareUrl,
+        },
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: "Failed to update social share photo", details: err.message });
+    }
+  };
+
+  api.post("/users/me/social-share", authMiddleware, upload.single("photo"), handleSocialShareUpload);
+  api.put("/users/me/social-share", authMiddleware, upload.single("photo"), handleSocialShareUpload);
 
   api.post("/channels/mine/thumbnail", upload.single("thumbnail"), async (req, res) => {
     try {
@@ -994,15 +1042,61 @@ async function startServer() {
             title = `${matchedChannel.display_name || matchedChannel.username} // ${matchedChannel.stream_title || "Live Stream"}`;
             description = `Watch ${matchedChannel.display_name || matchedChannel.username} live streaming ${matchedChannel.category || 'music'} on SPARKZ.TV. "${matchedChannel.stream_title || 'Join the Signal.'}"`;
             
-            let rawPhoto = matchedChannel.photo_url || matchedChannel.thumbnail_url;
-            if (rawPhoto) {
-              if (rawPhoto.includes("api.dicebear.com") && rawPhoto.includes("/svg")) {
-                rawPhoto = rawPhoto.replace("/svg", "/png");
+            let socialShareUrl = null;
+            let rawPhoto = null;
+
+            // Try to find matching user profile in-memory
+            let assocUser = null;
+            if (matchedChannel.user_uid) {
+              assocUser = db.users.get(matchedChannel.user_uid);
+            }
+            if (!assocUser && matchedChannel.username) {
+              for (const u of db.users.values()) {
+                if (u.username && u.username.toLowerCase() === matchedChannel.username.toLowerCase()) {
+                  assocUser = u;
+                  break;
+                }
               }
-              if (rawPhoto.startsWith("http")) {
-                image = rawPhoto;
+            }
+
+            // If firestore is available, fetch the user record dynamically to be real-time
+            if (dbFirestore && matchedChannel.user_uid) {
+              try {
+                const userDocSnap = await dbFirestore.collection("users").doc(matchedChannel.user_uid).get();
+                if (userDocSnap.exists) {
+                  const uData = userDocSnap.data();
+                  if (uData) {
+                    if (uData.social_share_image_url) {
+                      socialShareUrl = uData.social_share_image_url;
+                    }
+                    if (uData.photo_url) {
+                      rawPhoto = uData.photo_url;
+                    }
+                  }
+                }
+              } catch (e: any) {
+                console.warn("[Meta Inject] Firestore fetch error:", e.message);
+              }
+            }
+
+            if (!socialShareUrl && assocUser) {
+              socialShareUrl = assocUser.social_share_image_url || null;
+            }
+            if (!rawPhoto) {
+              rawPhoto = matchedChannel.photo_url || matchedChannel.thumbnail_url || (assocUser ? assocUser.photo_url : null);
+            }
+
+            // Prioritize custom social share image URL, falling back to standard profile photo or banner
+            let targetImage = socialShareUrl || rawPhoto;
+
+            if (targetImage) {
+              if (targetImage.includes("api.dicebear.com") && targetImage.includes("/svg")) {
+                targetImage = targetImage.replace("/svg", "/png");
+              }
+              if (targetImage.startsWith("http")) {
+                image = targetImage;
               } else {
-                let cleanPhoto = rawPhoto;
+                let cleanPhoto = targetImage;
                 if (cleanPhoto.startsWith("/api/files/") && !cleanPhoto.endsWith(".png") && !cleanPhoto.endsWith(".jpg") && !cleanPhoto.endsWith(".jpeg") && !cleanPhoto.endsWith(".webp") && !cleanPhoto.endsWith(".gif")) {
                   cleanPhoto = `${cleanPhoto}.jpg`;
                 }

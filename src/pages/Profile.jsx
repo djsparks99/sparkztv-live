@@ -11,10 +11,12 @@ export default function Profile() {
   const [bio, setBio] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingSocial, setUploadingSocial] = useState(false);
   const [channel, setChannel] = useState(null);
   const [revealKey, setRevealKey] = useState(false);
   const [loadingStream, setLoadingStream] = useState(false);
   const fileRef = useRef(null);
+  const socialFileRef = useRef(null);
 
   useEffect(() => {
     if (user) {
@@ -129,6 +131,65 @@ export default function Profile() {
     }
   };
 
+  const onSocialFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Choose an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be under 5MB.");
+      return;
+    }
+    setUploadingSocial(true);
+    try {
+      const base64 = await compressAndResizeImage(file, 1200, 630, 0.85);
+      const { data } = await api.post("/users/me/social-share", {
+        image: base64,
+        photo: base64,
+        file: base64,
+        filename: file.name
+      });
+      const socialShareUrl = data?.social_share_image_url || data?.url || data?.socialShareImageUrl;
+      if (socialShareUrl) {
+        setUser((prev) => ({ ...prev, social_share_image_url: socialShareUrl }));
+        if (user?.uid) {
+          await updateUserProfileInFirestore(user.uid, { social_share_image_url: socialShareUrl }, user.username);
+        }
+      }
+      if (typeof refresh === "function") {
+        await refresh();
+      }
+      toast.success("Social share preview image updated!");
+    } catch (err) {
+      console.error("Social share photo upload error:", err);
+      toast.error(apiErrorMessage(err) || "Upload social share photo failed.");
+    } finally {
+      setUploadingSocial(false);
+      if (socialFileRef.current) socialFileRef.current.value = "";
+    }
+  };
+
+  const resetSocialFile = async () => {
+    setUploadingSocial(true);
+    try {
+      const payload = {
+        social_share_image_url: null
+      };
+      await api.patch("/users/me", payload);
+      setUser((prev) => ({ ...prev, social_share_image_url: null }));
+      if (user?.uid) {
+        await updateUserProfileInFirestore(user.uid, payload, user.username);
+      }
+      toast.success("Social share preview reset to default.");
+    } catch (err) {
+      toast.error("Failed to reset social share preview.");
+    } finally {
+      setUploadingSocial(false);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -174,6 +235,76 @@ export default function Profile() {
               </button>
               <p className="mt-3 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
                 JPG / PNG / WEBP — MAX 5MB
+              </p>
+            </div>
+          </div>
+
+          {/* Social Share Preview (Open Graph) */}
+          <div className="mt-6 border border-[#27272a] bg-[#0a0a0a] p-6" data-testid="profile-social-share-section">
+            <div className="label-caps">// SOCIAL SHARE PREVIEW</div>
+            <div className="mt-4 flex flex-col items-center">
+              {user.social_share_image_url ? (
+                <img
+                  src={fileUrl(user.social_share_image_url)}
+                  alt="Social Share"
+                  className="aspect-[1.91/1] w-full border border-[#27272a] object-cover"
+                  data-testid="profile-social-share-preview"
+                />
+              ) : user.photo_url ? (
+                <div className="relative aspect-[1.91/1] w-full border border-[#27272a] bg-black flex flex-col items-center justify-center p-4 text-center">
+                  <img
+                    src={fileUrl(user.photo_url)}
+                    alt="Fallback Avatar"
+                    className="h-16 w-16 border border-[#27272a] object-cover mb-2 opacity-50"
+                  />
+                  <span className="font-mono text-[9px] uppercase tracking-widest text-zinc-500">
+                    FALLBACK: STANDARD AVATAR
+                  </span>
+                </div>
+              ) : (
+                <div className="relative aspect-[1.91/1] w-full border border-[#27272a] bg-black flex flex-col items-center justify-center p-4 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center border border-[#27272a] bg-black rounded-full mb-2 opacity-50">
+                    <User className="h-6 w-6 text-zinc-700" />
+                  </div>
+                  <span className="font-mono text-[9px] uppercase tracking-widest text-zinc-500">
+                    FALLBACK: DEFAULT BRAND OG IMAGE
+                  </span>
+                </div>
+              )}
+
+              <input
+                ref={socialFileRef}
+                type="file"
+                accept="image/*"
+                onChange={onSocialFile}
+                className="hidden"
+                data-testid="profile-social-share-input"
+              />
+              <div className="mt-6 flex w-full flex-col gap-2">
+                <button
+                  onClick={() => socialFileRef.current?.click()}
+                  disabled={uploadingSocial}
+                  data-testid="profile-social-share-upload"
+                  className="btn-primary inline-flex items-center justify-center gap-2"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  {uploadingSocial ? "UPLOADING..." : "UPLOAD PREVIEW"}
+                </button>
+                {user.social_share_image_url && (
+                  <button
+                    onClick={resetSocialFile}
+                    disabled={uploadingSocial}
+                    data-testid="profile-social-share-reset"
+                    className="btn-ghost inline-flex items-center justify-center gap-2 text-xs border border-zinc-800 text-zinc-400 hover:text-white"
+                  >
+                    RESET TO DEFAULT
+                  </button>
+                )}
+              </div>
+              <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-widest text-zinc-500 leading-normal">
+                RECOMMENDED: 1200 × 630 PNG/JPG
+                <br />
+                FOR FACEBOOK / TWITTER CARDS
               </p>
             </div>
           </div>

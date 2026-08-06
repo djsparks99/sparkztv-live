@@ -17,6 +17,7 @@
         "display_name": { "type": "string", "required": true },
         "username_locked": { "type": "boolean", "required": true },
         "photo_url": { "type": "string", "required": false },
+        "social_share_image_url": { "type": "string", "required": false },
         "bio": { "type": "string", "required": false },
         "created_at": { "type": "string", "required": true }
       }

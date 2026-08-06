@@ -66,12 +66,14 @@ export function AuthProvider({ children }) {
 
     if (fbUser.email === "markysparks99@gmail.com") {
       let photo_url = fbUser.photoURL || null;
+      let social_share_image_url = null;
       let bio = "Broadcasting live and loud on SPARKZ.TV";
       let display_name = "djsparkz";
       try {
         const userDoc = await fetchUserDoc(fbUser.uid);
         if (userDoc) {
           if (userDoc.photo_url) photo_url = userDoc.photo_url;
+          if (userDoc.social_share_image_url) social_share_image_url = userDoc.social_share_image_url;
           if (userDoc.bio) bio = userDoc.bio;
           if (userDoc.display_name && userDoc.display_name !== "SPARKS 108 FM") display_name = userDoc.display_name;
         }
@@ -83,6 +85,7 @@ export function AuthProvider({ children }) {
         username: "djsparkz",
         display_name: display_name,
         photo_url: photo_url,
+        social_share_image_url: social_share_image_url,
         bio: bio,
         username_locked: true,
         created_at: new Date().toISOString(),
@@ -104,6 +107,7 @@ export function AuthProvider({ children }) {
           username: userDoc.username,
           display_name: userDoc.display_name,
           photo_url: userDoc.photo_url || fbUser.photoURL || null,
+          social_share_image_url: userDoc.social_share_image_url || null,
           bio: userDoc.bio || "",
           username_locked: true,
           created_at: userDoc.created_at,
