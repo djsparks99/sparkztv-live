@@ -1,18 +1,20 @@
 import { useState, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Eye, Radio, Play, Award, VolumeX } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ChevronLeft, ChevronRight, Eye, Radio, Play, Award, Volume2, ArrowRight, Bell } from "lucide-react";
 import { fileUrl } from "@/lib/api";
-import HlsPlayer from "@/components/HlsPlayer";
 import { useAuth } from "@/lib/auth-context";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
+import { db } from "@/lib/firebase";
+import { collection, doc, setDoc, deleteDoc, query, where, onSnapshot } from "firebase/firestore";
 
 const FALLBACK_THUMBS = [
   "https://images.unsplash.com/photo-1541126274323-dbac58d14741?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDJ8MHwxfHNlYXJjaHwxfHx1bmRlcmdyb3VuZCUyMHJhdmUlMjBkaiUyMHNldHxlbnwwfHx8fDE3ODU0NDAwMzJ8MA&ixlib=rb-4.1.0&q=85",
   "https://images.unsplash.com/photo-1516873240891-4bf014598ab4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDJ8MHwxfHNlYXJjaHw0fHx1bmRlcmdyb3VuZCUyMHJhdmUlMjBkaiUyMHNldHxlbnwwfHx8fDE3ODU0NDAwMzJ8MA&ixlib=rb-4.1.0&q=85",
   "https://images.unsplash.com/photo-1496337589254-7e19d01cec44?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDJ8MHwxfHNlYXJjaHwzfHx1bmRlcmdyb3VuZCUyMHJhdmUlMjBkaiUyMHNldHxlbnwwfHx8fDE3ODU0NDAwMzJ8MA&ixlib=rb-4.1.0&q=85",
+  "https://images.unsplash.com/photo-1574169208507-84376144848b?crop=entropy&cs=srgb&fm=jpg&w=800&q=80",
+  "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?crop=entropy&cs=srgb&fm=jpg&w=800&q=80"
 ];
-
-const DUMMY_USERNAMES = ["pirate_fm", "acid_vault", "dub_station", "test", "demo", "undefined", "channel"];
 
 function hashPick(str, arr) {
   if (!str) return arr[0];
@@ -23,415 +25,356 @@ function hashPick(str, arr) {
 
 export default function StreamCarousel({ allChannels = [], channels = [] }) {
   const { user } = useAuth();
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [direction, setDirection] = useState(0); // -1 for prev, 1 for next
-  const [isHovered, setIsHovered] = useState(false);
-  const autoplayTimerRef = useRef(null);
+  const navigate = useNavigate();
+  const scrollContainerRef = useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+  const [subscribedBroadcasters, setSubscribedBroadcasters] = useState([]); // Array of lowercased usernames
 
-  const channelsList = (allChannels && allChannels.length > 0) ? allChannels : channels;
-
-  // 1. Process channels
-  const seenUsernames = new Set();
-  const validChannels = (channelsList || []).filter((c) => {
-    if (!c) return false;
-    const username = (c.username || "").trim().toLowerCase();
-    const displayName = (c.display_name || "").trim().toLowerCase();
-    const channelId = (c.channel_id || "").trim().toLowerCase();
-
-    if (!username || username === "undefined" || username === "channel" || username === "null") {
-      return false;
-    }
-
-    if (
-      c.is_dummy ||
-      c.isDummy ||
-      DUMMY_USERNAMES.includes(username) ||
-      DUMMY_USERNAMES.includes(displayName) ||
-      channelId.startsWith("chan-pirate") ||
-      channelId.startsWith("chan-acid") ||
-      channelId.startsWith("chan-dub")
-    ) {
-      return false;
-    }
-
-    if (seenUsernames.has(username)) return false;
-    seenUsernames.add(username);
-    return true;
-  });
-
-  // Sort channels: Live first, then by viewer count, then fallback to djsparkz preference
-  const sortedChannels = [...validChannels].sort((a, b) => {
-    const aLive = Boolean(a.is_live || a.isLive);
-    const bLive = Boolean(b.is_live || b.isLive);
-    if (aLive !== bLive) {
-      return bLive ? 1 : -1;
-    }
-    const aViews = Number(a.viewer_count || a.viewerCount || a.views || 0);
-    const bViews = Number(b.viewer_count || b.viewerCount || b.views || 0);
-    if (bViews !== aViews) {
-      return bViews - aViews;
-    }
-    const aSparkz = (a.username || "").toLowerCase() === "djsparkz";
-    const bSparkz = (b.username || "").toLowerCase() === "djsparkz";
-    if (aSparkz !== bSparkz) {
-      return bSparkz ? 1 : -1;
-    }
-    return 0;
-  });
-
-  // Take top 5 channels as slides
-  const slides = sortedChannels.slice(0, 5);
-
-  // Fallback slide if empty
-  if (slides.length === 0) {
-    slides.push({
-      username: "djsparkz",
-      display_name: "djsparkz",
-      photo_url: null,
-      thumbnail_url: null,
-      stream_title: "Static Signal — Offline",
-      bio: "Underground resident DJ.",
-      viewer_count: 0,
-      is_live: false,
-    });
-  }
-
-  const liveChannels = validChannels.filter((c) => Boolean(c.is_live || c.isLive));
-  const totalLiveViewers = liveChannels.reduce(
-    (sum, c) => sum + Number(c.viewer_count || c.viewerCount || c.views || 0),
-    0
-  );
-
-  // 2. Navigation handlers
-  const handleNext = () => {
-    setDirection(1);
-    setCurrentIndex((prev) => (prev + 1) % slides.length);
-  };
-
-  const handlePrev = () => {
-    setDirection(-1);
-    setCurrentIndex((prev) => (prev - 1 + slides.length) % slides.length);
-  };
-
-  const handleDotClick = (index) => {
-    setDirection(index > currentIndex ? 1 : -1);
-    setCurrentIndex(index);
-  };
-
-  // Autoplay management
+  // Listen to the user's live notification subscriptions in Firestore
   useEffect(() => {
-    if (isHovered || slides.length <= 1) {
-      if (autoplayTimerRef.current) {
-        clearInterval(autoplayTimerRef.current);
-      }
+    if (!user?.uid) {
+      setSubscribedBroadcasters([]);
       return;
     }
 
-    autoplayTimerRef.current = setInterval(() => {
-      handleNext();
-    }, 6000);
+    const q = query(
+      collection(db, "subscriptions"),
+      where("userId", "==", user.uid)
+    );
 
-    return () => {
-      if (autoplayTimerRef.current) {
-        clearInterval(autoplayTimerRef.current);
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const subs = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.broadcaster_username) {
+          subs.push(data.broadcaster_username.toLowerCase());
+        }
+      });
+      setSubscribedBroadcasters(subs);
+    }, (err) => {
+      console.warn("Failed to listen to subscriptions:", err);
+    });
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  const handleToggleNotification = async (e, channel) => {
+    // Prevent navigating to the channel detail page when clicking the toggle inside the card
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!user) {
+      toast.error("Please log in to sign up for notifications.", {
+        description: "You need an account to track subscriptions.",
+      });
+      navigate("/login");
+      return;
+    }
+
+    const slug = (channel.username || channel.channel_id || channel.id || "channel").toLowerCase();
+    const isSubbed = subscribedBroadcasters.includes(slug);
+    const subId = `${user.uid}_${slug}`;
+    const subRef = doc(db, "subscriptions", subId);
+
+    try {
+      if (isSubbed) {
+        await deleteDoc(subRef);
+        toast.success(`Notifications disabled for @${slug}`);
+      } else {
+        await setDoc(subRef, {
+          id: subId,
+          userId: user.uid,
+          broadcaster_username: slug,
+          broadcaster_display_name: channel.display_name || slug,
+          created_at: new Date().toISOString(),
+          active: true
+        });
+        toast.success(`Notifications enabled! We'll ping you when @${slug} goes live.`);
       }
+    } catch (err) {
+      console.error("Failed to toggle subscription:", err);
+      toast.error("Subscription failed. Please check rules or connection.");
+    }
+  };
+
+  const channelsList = (allChannels && allChannels.length > 0) ? allChannels : channels;
+
+  // Filter channels to remove generic / empty names and select ONLY live ones
+  const seenUsernames = new Set();
+  const carouselItems = (channelsList || []).filter((c) => {
+    if (!c) return false;
+    const username = (c.username || "").trim().toLowerCase();
+    if (!username || username === "undefined" || username === "channel" || username === "null") {
+      return false;
+    }
+    if (seenUsernames.has(username)) return false;
+    seenUsernames.add(username);
+    return Boolean(c.is_live || c.isLive);
+  });
+
+  // Calculate total viewers (live channels only)
+  const totalLiveViewers = carouselItems
+    .reduce((sum, c) => sum + Number(c.viewer_count || c.viewerCount || c.views || 0), 0);
+
+  // Update button visibility on scroll
+  const checkScroll = () => {
+    if (scrollContainerRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+      setCanScrollLeft(scrollLeft > 10);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 10);
+    }
+  };
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (el) {
+      el.addEventListener("scroll", checkScroll);
+      // Run once on load
+      checkScroll();
+      // Handle resize
+      window.addEventListener("resize", checkScroll);
+    }
+    return () => {
+      if (el) el.removeEventListener("scroll", checkScroll);
+      window.removeEventListener("resize", checkScroll);
     };
-  }, [currentIndex, isHovered, slides.length]);
+  }, [carouselItems.length]);
 
-  const activeChannel = slides[currentIndex];
-  const isLive = Boolean(activeChannel.is_live || activeChannel.isLive);
-  const activeSlug = activeChannel.username || activeChannel.channel_id || activeChannel.id || "channel";
-  const activeViews = Number(activeChannel.viewer_count || activeChannel.viewerCount || activeChannel.views || 0);
-
-  // Resolve Thumbnail Source
-  const thumbnailSource = activeChannel.thumbnail_url || activeChannel.thumbnailUrl || activeChannel.preview_image || activeChannel.previewImage;
-  const activeThumb = thumbnailSource
-    ? (thumbnailSource.startsWith("http") ? thumbnailSource : fileUrl(thumbnailSource))
-    : hashPick(activeSlug, FALLBACK_THUMBS);
-
-  // Resolve Avatar with PNG fallback (to avoid SVG warnings)
-  const isMe = user && (
-    (user.uid && user.uid === activeChannel.user_uid) ||
-    (user.username && user.username.toLowerCase() === activeSlug.toLowerCase())
-  );
-  const avatarUrl = activeChannel.photo_url || 
-                    activeChannel.photoUrl || 
-                    (activeChannel.user && (activeChannel.user.photo_url || activeChannel.user.photoUrl)) ||
-                    (isMe && (user?.photo_url || user?.photoUrl)) ||
-                    `https://api.dicebear.com/7.x/bottts/png?seed=${activeSlug}`;
-
-  // Framer motion variants
-  const slideVariants = {
-    enter: (dir) => ({
-      x: dir > 0 ? "100%" : "-100%",
-      opacity: 0,
-    }),
-    center: {
-      x: 0,
-      opacity: 1,
-      transition: {
-        x: { type: "spring", stiffness: 300, damping: 30 },
-        opacity: { duration: 0.2 },
-      },
-    },
-    exit: (dir) => ({
-      x: dir < 0 ? "100%" : "-100%",
-      opacity: 0,
-      transition: {
-        x: { type: "spring", stiffness: 300, damping: 30 },
-        opacity: { duration: 0.2 },
-      },
-    }),
+  const scroll = (direction) => {
+    if (scrollContainerRef.current) {
+      const scrollAmount = 420; // Width of cards + gap
+      scrollContainerRef.current.scrollBy({
+        left: direction === "left" ? -scrollAmount : scrollAmount,
+        behavior: "smooth"
+      });
+    }
   };
 
   return (
     <section 
       id="stream-carousel"
-      className="relative border-b border-[#27272a] bg-[#050505] text-white overflow-hidden select-none"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      className="relative border-b border-[#1c1c1f] bg-[#030303] text-white overflow-hidden select-none"
       data-testid="stream-carousel"
     >
-      {/* Dark Industrial Grid Scanlines */}
-      <div className="grid-lines absolute inset-0 opacity-20 pointer-events-none" />
-      
-      {/* Top Header Row */}
+      {/* Decorative Grid Lines with Neon Accents */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#141416_1px,transparent_1px),linear-gradient(to_bottom,#141416_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-30 pointer-events-none" />
+
+      {/* Header Container */}
       <div className="relative mx-auto max-w-[1440px] px-6 pt-8 pb-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between border-b border-[#1a1a1e] pb-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-[#1a1a1e] pb-4">
           <div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">// NETWORK FEED</div>
-            <h1 className="mt-0.5 font-display text-2xl font-black uppercase tracking-tight text-white sm:text-3xl lg:text-4xl">
-              SIGNAL CAROUSEL // <span className="text-[#e5ff00]">LIVE CHANNELS</span>
+            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#e5ff00]">// NETWORK TRANSMISSIONS</div>
+            <h1 className="mt-1 font-display text-2xl font-black uppercase tracking-tight text-white sm:text-3xl lg:text-4xl">
+              FEATURED BROADCASTS // <span className="text-[#e5ff00] font-sans italic">LIVE FEED</span>
             </h1>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 border border-[#27272a] bg-[#09090b] px-3 py-1.5 font-mono text-[10px] text-zinc-300">
-              <span className="relative flex h-2 w-2">
-                <span className={`absolute inline-flex h-full w-full rounded-full bg-[#e5ff00] opacity-75 ${totalLiveViewers > 0 ? "animate-ping" : ""}`} />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#e5ff00]" />
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 border border-[#27272a] bg-[#09090b] px-3.5 py-2 font-mono text-[10px] text-zinc-300">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 animate-ping" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
               </span>
-              <span>{totalLiveViewers} TOTAL LIVE VIEWERS</span>
+              <span className="font-bold text-white">{totalLiveViewers} VIEWERS ACTIVE</span>
             </div>
-            <Link
-              to="/register"
-              className="font-mono text-[11px] font-bold uppercase tracking-widest text-[#e5ff00] hover:underline sm:inline-block border border-[#e5ff00]/20 bg-[#e5ff00]/5 px-3 py-1.5 hover:bg-[#e5ff00]/10 transition-colors"
-            >
-              + GO LIVE NOW
-            </Link>
+
+            {/* Scroll buttons on the top right */}
+            {carouselItems.length > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => scroll("left")}
+                  disabled={!canScrollLeft}
+                  className={`h-9 w-9 flex items-center justify-center border border-[#27272a] bg-[#09090b] text-zinc-400 hover:text-[#e5ff00] hover:border-[#e5ff00] disabled:opacity-40 disabled:hover:text-zinc-400 disabled:hover:border-[#27272a] transition-all`}
+                  aria-label="Scroll left"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  onClick={() => scroll("right")}
+                  disabled={!canScrollRight}
+                  className={`h-9 w-9 flex items-center justify-center border border-[#27272a] bg-[#09090b] text-zinc-400 hover:text-[#e5ff00] hover:border-[#e5ff00] disabled:opacity-40 disabled:hover:text-zinc-400 disabled:hover:border-[#27272a] transition-all`}
+                  aria-label="Scroll right"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Main Carousel Slider Stage */}
-      <div className="relative mx-auto max-w-[1440px] px-6 py-6 sm:py-8 min-h-[460px] flex items-center justify-center">
-        <div className="w-full relative overflow-hidden min-h-[420px] lg:min-h-[380px]">
-          <AnimatePresence initial={false} custom={direction} mode="wait">
-            <motion.div
-              key={currentIndex}
-              custom={direction}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-center w-full"
-            >
-              {/* Left Column: Metadata & Detailed Info */}
-              <div className="flex flex-col justify-center lg:col-span-5 py-4">
-                <div className="flex flex-wrap items-center gap-2 mb-4">
-                  {/* Status Badge */}
-                  <div className="inline-flex items-center gap-2 border border-[#27272a] bg-[#09090b] px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider text-zinc-400">
-                    <span className={`relative flex h-2 w-2`}>
-                      <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${isLive ? "bg-red-500 animate-ping" : "bg-zinc-500"}`} />
-                      <span className={`relative inline-flex h-2 w-2 rounded-full ${isLive ? "bg-red-500" : "bg-zinc-500"}`} />
-                    </span>
-                    <span>{isLive ? "TRANSMISSION ONLINE" : "SIGNAL STANDBY"}</span>
-                  </div>
-
-                  {/* Category/Genre Tag */}
-                  {activeChannel.category && (
-                    <span className="border border-[#e5ff00]/30 bg-[#e5ff00]/10 text-[#e5ff00] font-mono text-[9px] uppercase tracking-widest px-2.5 py-1">
-                      {activeChannel.category}
-                    </span>
-                  )}
-                </div>
-
-                {/* Stream Title */}
-                <h2 className="font-display text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black uppercase tracking-tighter text-white leading-[1.05]">
-                  {isLive 
-                    ? (activeChannel.stream_title || "Live underground broadcast") 
-                    : "Static Signal — Standby mode."}
-                </h2>
-
-                {/* Broadcaster Profile Card */}
-                <div className="mt-6 flex items-center gap-3 border border-[#1e1e21] bg-[#09090b] p-3.5 max-w-md">
-                  <img
-                    src={avatarUrl.startsWith("http") ? avatarUrl : fileUrl(avatarUrl)}
-                    alt={activeChannel.display_name || activeSlug}
-                    className="h-10 w-10 shrink-0 border border-[#e5ff00] object-cover bg-black"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      e.target.src = `https://api.dicebear.com/7.x/bottts/png?seed=${activeSlug}`;
-                    }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-display text-base font-black text-white truncate uppercase">
-                        {activeChannel.display_name || activeChannel.username}
-                      </h3>
-                      <span className="font-mono text-[10px] text-zinc-500 shrink-0">@{activeSlug}</span>
-                    </div>
-                    <p className="mt-0.5 line-clamp-1 font-mono text-[10px] text-zinc-400">
-                      {activeChannel.bio || "Underground network streamer."}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Stream Metrics / Info */}
-                <div className="mt-6 flex flex-wrap items-center gap-6 font-mono text-xs text-zinc-400 border-t border-[#1a1a1e] pt-5">
-                  {isLive ? (
-                    <div className="flex items-center gap-2">
-                      <Eye className="h-4 w-4 text-[#e5ff00]" />
-                      <span className="text-[#e5ff00] font-bold">{activeViews}</span> VIEWERS TUNED IN
-                    </div>
-                  ) : (
-                    <div className="text-zinc-500 font-mono text-[11px] uppercase">
-                      // LAST BROADCAST RECENTLY
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1.5 text-zinc-400">
-                    <Award className="h-4 w-4 text-[#e5ff00]" />
-                    <span>FEATURED SIGNALS</span>
-                  </div>
-                </div>
-
-                {/* Action Links */}
-                <div className="mt-8 flex flex-wrap gap-3">
-                  <Link 
-                    to={`/channel/${activeSlug}`}
-                    data-testid={`carousel-tune-in-${activeSlug}`}
-                    className="btn-primary inline-flex items-center gap-2 px-6 py-3 font-mono text-xs font-bold uppercase tracking-wider"
-                  >
-                    <Radio className="h-4 w-4" /> {isLive ? "TUNE IN LIVE" : "VIEW FREQUENCY"}
-                  </Link>
-                  <Link 
-                    to="/directory" 
-                    className="border border-[#27272a] bg-[#09090b] hover:bg-zinc-900 transition-colors inline-flex items-center gap-2 px-6 py-3 font-mono text-xs font-bold uppercase tracking-wider text-white"
-                  >
-                    ALL SIGNAL CHANNELS
-                  </Link>
-                </div>
+      {/* Horizontal Sliding Carousel Container or Empty State */}
+      {carouselItems.length === 0 ? (
+        <div className="relative mx-auto max-w-[1440px] px-6 py-12" data-testid="carousel-empty-state">
+          <div className="border border-dashed border-[#27272a] bg-[#09090b]/40 p-12 text-center relative overflow-hidden">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(229,255,0,0.03),transparent_60%)] pointer-events-none" />
+            <div className="relative z-10 flex flex-col items-center">
+              <Radio className="h-10 w-10 text-zinc-600 animate-pulse mb-3" />
+              <div className="font-display text-lg font-black uppercase tracking-wider text-zinc-400">
+                // NO ACTIVE TRANSMISSIONS
               </div>
+              <p className="mt-2 font-mono text-[10px] text-zinc-500 uppercase tracking-widest max-w-md mx-auto">
+                The underground network is currently standby. Broadcast your own stream to go live.
+              </p>
+              <div className="mt-6">
+                <Link 
+                  to="/register" 
+                  className="inline-flex items-center gap-1.5 px-4 py-2 border border-[#e5ff00] bg-[#e5ff00]/5 text-[#e5ff00] font-mono text-[10px] font-bold uppercase tracking-wider hover:bg-[#e5ff00] hover:text-black transition-all"
+                >
+                  <span>START BROADCASTING</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="relative mx-auto max-w-[1440px] px-6 py-6 overflow-visible">
+          <div 
+            ref={scrollContainerRef}
+            className="flex gap-6 overflow-x-auto scrollbar-none scroll-smooth snap-x snap-mandatory pb-4"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            {carouselItems.map((channel, idx) => {
+              const isLive = Boolean(channel.is_live || channel.isLive);
+              const slug = channel.username || channel.channel_id || channel.id || "channel";
+              const views = Number(channel.viewer_count || channel.viewerCount || channel.views || 0);
+              const isSubbed = subscribedBroadcasters.includes(slug.toLowerCase());
 
-              {/* Right Column: Featured Player & Preview Thumbnail Overlay */}
-              <div className="lg:col-span-7">
-                <div className="group flex flex-col overflow-hidden border border-[#27272a] bg-[#0a0a0a] transition-all hover:border-[#e5ff00] w-full shadow-2xl relative">
-                  
-                  {/* Player / 16:9 Landscape Banner Container */}
-                  <div className="relative aspect-[16/9] max-h-[380px] w-full overflow-hidden bg-black">
+              // Resolve Thumbnail
+              const thumbSrc = channel.thumbnail_url || channel.thumbnailUrl || channel.preview_image || channel.previewImage;
+              const finalThumb = thumbSrc
+                ? (thumbSrc.startsWith("http") ? thumbSrc : fileUrl(thumbSrc))
+                : hashPick(slug, FALLBACK_THUMBS);
+
+              // Resolve Avatar URL
+              const isMe = user && (
+                (user.uid && user.uid === channel.user_uid) ||
+                (user.username && user.username.toLowerCase() === slug.toLowerCase())
+              );
+              const avatarUrl = channel.photo_url || 
+                                channel.photoUrl || 
+                                (channel.user && (channel.user.photo_url || channel.user.photoUrl)) ||
+                                (isMe && (user?.photo_url || user?.photoUrl)) ||
+                                `https://api.dicebear.com/7.x/bottts/png?seed=${slug}`;
+
+              return (
+                <div 
+                  key={`${slug}-${idx}`}
+                  className="snap-start shrink-0 w-[310px] sm:w-[360px] md:w-[400px] border border-[#1e1e21] bg-[#09090b] hover:border-[#e5ff00]/60 transition-all duration-300 flex flex-col group relative overflow-hidden"
+                >
+                  {/* 16:9 Landscape Video Preview/Thumbnail Stage */}
+                  <div className="relative aspect-[16/9] w-full overflow-hidden bg-black">
+                    <img
+                      src={finalThumb}
+                      alt={channel.display_name || slug}
+                      referrerPolicy="no-referrer"
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
                     
-                    {/* Active Live Player Stream */}
-                    <div className="w-full h-full relative" data-testid="live-player-container">
-                      <HlsPlayer
-                        playbackId={activeChannel.playback_id || activeChannel.playbackId}
-                        isLive={isLive}
-                        muted={true}
-                        autoPlay={true}
-                        controls={false}
-                      />
-                    </div>
+                    {/* Subtle dark bottom gradient overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
 
-                    {/* Preview Thumbnail Overlay (Only shows if OFFLINE) */}
-                    {!isLive && (
-                      <div className="absolute inset-0 z-20 bg-black flex items-center justify-center">
-                        <img
-                          src={activeThumb}
-                          alt={activeChannel.display_name || activeSlug}
-                          referrerPolicy="no-referrer"
-                          className="h-full w-full object-cover opacity-80"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/60 flex flex-col items-center justify-center p-4 text-center">
-                          <span className="border border-[#e5ff00]/40 bg-black/85 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-[#e5ff00] mb-2.5">
-                            SIGNAL OFFLINE — STANDBY PREVIEW
-                          </span>
-                          <p className="font-mono text-xs text-zinc-400 max-w-sm">
-                            DJ is currently off the grid. Click "VIEW FREQUENCY" to view past broadcasts and schedule.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Bottom overlay gradient */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-transparent pointer-events-none z-25" />
-
-                    {/* Badges in Upper Corner */}
-                    <div className="absolute left-3 top-3 flex flex-wrap items-center gap-2 z-30">
-                      <span className="flex items-center gap-1.5 bg-[#e5ff00] px-2.5 py-0.5 font-mono text-[10px] font-black uppercase text-black">
-                        <Award className="h-3.5 w-3.5" /> FEATURED
-                      </span>
+                    {/* Upper-Left Live Badge / Offline Standby Badge */}
+                    <div className="absolute left-3 top-3 flex flex-wrap items-center gap-2">
                       {isLive ? (
-                        <span className="live-badge !px-2.5 !py-0.5 !text-[10px] bg-red-600 text-white flex items-center gap-1">
-                          <span className="dot live-dot animate-pulse h-1.5 w-1.5 bg-white rounded-full inline-block" /> LIVE NOW
+                        <span className="inline-flex items-center gap-1.5 bg-red-600 px-2.5 py-0.5 font-mono text-[9px] font-black uppercase tracking-wider text-white">
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+                          LIVE
                         </span>
                       ) : (
-                        <span className="chip !px-2.5 !py-0.5 !text-[10px] !bg-zinc-900/90 !text-zinc-400 !border-zinc-800">STANDBY</span>
+                        <span className="inline-flex items-center bg-zinc-800 border border-zinc-700 px-2.5 py-0.5 font-mono text-[9px] font-bold text-zinc-400">
+                          STANDBY
+                        </span>
+                      )}
+
+                      {isLive && (
+                        <span className="inline-flex items-center gap-1 bg-black/75 px-2.5 py-0.5 font-mono text-[9px] text-zinc-300">
+                          <Eye className="h-3 w-3 text-[#e5ff00]" />
+                          {views}
+                        </span>
                       )}
                     </div>
 
-                    {/* Live indicator / volume icon placeholder */}
-                    {isLive && (
-                      <div className="absolute right-3 top-3 flex items-center gap-1.5 border border-[#27272a] bg-black/90 px-2.5 py-1 font-mono text-[10px] font-bold text-[#e5ff00] backdrop-blur-md z-30">
-                        <VolumeX className="h-3 w-3 text-[#e5ff00]" />
-                        <span>MUTED PREVIEW</span>
+                    {/* Upper-Right Category/Genre Tag */}
+                    {channel.category && (
+                      <div className="absolute right-3 top-3">
+                        <span className="border border-[#e5ff00]/40 bg-black/80 text-[#e5ff00] font-mono text-[9px] uppercase tracking-widest px-2 py-0.5">
+                          {channel.category}
+                        </span>
                       </div>
                     )}
+
+                    {/* Overlaid Play Button Indicator on Hover */}
+                    <Link 
+                      to={`/channel/${slug}`}
+                      className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                    >
+                      <div className="h-12 w-12 rounded-full border border-[#e5ff00] bg-black/80 flex items-center justify-center text-[#e5ff00] shadow-[0_0_15px_rgba(229,255,0,0.3)] transform scale-90 group-hover:scale-100 transition-transform duration-300">
+                        <Play className="h-5 w-5 fill-current ml-0.5" />
+                      </div>
+                    </Link>
+                  </div>
+
+                  {/* Stream Description & Broadcaster Metadata Body */}
+                  <div className="p-4 flex gap-3 flex-1 min-h-[105px]">
+                    <Link to={`/channel/${slug}`} className="shrink-0">
+                      <img
+                        src={avatarUrl.startsWith("http") ? avatarUrl : fileUrl(avatarUrl)}
+                        alt={channel.display_name || slug}
+                        className="h-10 w-10 border border-[#e5ff00]/40 group-hover:border-[#e5ff00] object-cover bg-black rounded-none transition-colors"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          e.target.src = `https://api.dicebear.com/7.x/bottts/png?seed=${slug}`;
+                        }}
+                      />
+                    </Link>
+
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-display text-sm font-black text-white group-hover:text-[#e5ff00] transition-colors leading-snug truncate uppercase">
+                        <Link to={`/channel/${slug}`}>
+                          {isLive ? (channel.stream_title || "Live underground set") : "Static Signal — Standby"}
+                        </Link>
+                      </h3>
+                      <div className="mt-1 flex items-center gap-1.5 text-zinc-400 font-mono text-[10px]">
+                        <span className="text-white font-bold">{channel.display_name || channel.username}</span>
+                        <span>•</span>
+                        <span className="text-zinc-500">@{slug}</span>
+                      </div>
+                      <p className="mt-1.5 line-clamp-1 font-mono text-[9px] text-zinc-500 uppercase tracking-wider">
+                        {channel.bio || "Resident Frequency broadcaster."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* CTA Action Bar footer */}
+                  <div className="p-4 pt-0 border-t border-[#121214] mt-auto flex items-center justify-between gap-2">
+                    <button
+                      onClick={(e) => handleToggleNotification(e, channel)}
+                      data-testid={`carousel-notify-${slug}`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 font-mono text-[9px] font-bold uppercase transition-all duration-200 border ${
+                        isSubbed 
+                          ? "border-[#e5ff00] bg-[#e5ff00]/10 text-[#e5ff00] shadow-[0_0_10px_rgba(229,255,0,0.15)]" 
+                          : "border-[#27272a] bg-black text-zinc-400 hover:text-white hover:border-zinc-500"
+                      }`}
+                    >
+                      <Bell className={`h-3 w-3 ${isSubbed ? "fill-[#e5ff00]" : ""}`} />
+                      <span>{isSubbed ? "NOTIFIED" : "NOTIFY ME"}</span>
+                    </button>
+
+                    <Link 
+                      to={`/channel/${slug}`}
+                      data-testid={`carousel-tune-in-${slug}`}
+                      className="inline-flex items-center gap-1 text-[10px] font-bold font-mono uppercase tracking-wider text-[#e5ff00] hover:underline"
+                    >
+                      <span>{isLive ? "TUNE IN NOW" : "VIEW CHANNEL"}</span>
+                      <ArrowRight className="h-3 w-3" />
+                    </Link>
                   </div>
                 </div>
-              </div>
-            </motion.div>
-          </AnimatePresence>
-        </div>
-
-        {/* Floating Side Arrows for desktop slide cycling */}
-        {slides.length > 1 && (
-          <>
-            <button
-              onClick={handlePrev}
-              className="absolute left-0 top-1/2 -translate-y-1/2 z-40 h-10 w-10 flex items-center justify-center border border-[#27272a] bg-[#050505]/90 text-zinc-400 hover:text-[#e5ff00] hover:border-[#e5ff00] transition-colors rounded-sm"
-              aria-label="Previous Slide"
-              data-testid="carousel-prev"
-            >
-              <ChevronLeft className="h-6 w-6" />
-            </button>
-            <button
-              onClick={handleNext}
-              className="absolute right-0 top-1/2 -translate-y-1/2 z-40 h-10 w-10 flex items-center justify-center border border-[#27272a] bg-[#050505]/90 text-zinc-400 hover:text-[#e5ff00] hover:border-[#e5ff00] transition-colors rounded-sm"
-              aria-label="Next Slide"
-              data-testid="carousel-next"
-            >
-              <ChevronRight className="h-6 w-6" />
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Slide dots and indicator line */}
-      {slides.length > 1 && (
-        <div className="relative mx-auto max-w-[1440px] px-6 pb-8 flex items-center justify-between font-mono text-[10px] text-zinc-500">
-          <div>
-            SLIDE <span className="text-white">{String(currentIndex + 1).padStart(2, "0")}</span> / {String(slides.length).padStart(2, "0")}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {slides.map((_, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleDotClick(idx)}
-                className={`h-2 transition-all rounded-none ${idx === currentIndex ? "w-8 bg-[#e5ff00]" : "w-2 bg-zinc-700 hover:bg-zinc-500"}`}
-                aria-label={`Go to slide ${idx + 1}`}
-                data-testid={`carousel-dot-${idx}`}
-              />
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
