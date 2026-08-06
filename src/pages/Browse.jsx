@@ -70,25 +70,42 @@ export default function Browse() {
       setBackendLoading(true);
     }
 
-    api.get("/channels")
-      .then(() => {
-        if (active) setBackendLoading(false);
-      })
-      .catch((err) => {
+    async function load() {
+      try {
+        const { data } = await api.get("/channels");
+        if (active && Array.isArray(data)) {
+          const DUMMY_USERNAMES = ["pirate_fm", "acid_vault", "dub_station"];
+          const cleaned = data.filter(
+            (c) =>
+              !DUMMY_USERNAMES.includes((c.username || "").toLowerCase()) &&
+              !c.is_dummy &&
+              !c.channel_id?.startsWith("chan-pirate") &&
+              !c.channel_id?.startsWith("chan-acid") &&
+              !c.channel_id?.startsWith("chan-dub")
+          );
+          setRawChannels(cleaned);
+        }
+      } catch (err) {
         console.warn("Initial channels fetch on Browse failed/timed out:", err);
-        if (active) setBackendLoading(false);
-      });
+      } finally {
+        if (active) {
+          setBackendLoading(false);
+          setLoading(false);
+          hasLoadedOnceRef.current = true;
+        }
+      }
+    }
+    load();
 
     const q = collection(db, "channels");
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         if (!active) return;
-        const map = new Map();
-        snapshot.forEach((doc) => {
-          const docId = doc.id;
-          const data = doc.data();
-          if (!data) return;
+        const fsDocs = snapshot.docs.map((docSnap) => {
+          const docId = docSnap.id;
+          const data = docSnap.data();
+          if (!data) return null;
 
           const isUndefinedId = (
             docId === "undefined" ||
@@ -96,11 +113,11 @@ export default function Browse() {
             docId.toLowerCase() === "undefined" ||
             docId.toLowerCase() === "null"
           );
-          if (isUndefinedId) return;
+          if (isUndefinedId) return null;
 
           const channelKey = data.channel_id || data.username || docId;
           if (channelKey === "undefined" || channelKey === "null" || data.username === "undefined" || data.username === "null") {
-            return;
+            return null;
           }
 
           let playbackId = data.playback_id || data.playbackId || "";
@@ -112,39 +129,40 @@ export default function Browse() {
             livepeerStreamId = data.livepeer_stream_id || "arn:aws:ivs:us-east-1:123456789012:channel/djsparkz-channel";
           }
 
-          map.set(channelKey, {
-            id: docId,
+          return {
+            channel_id: docId,
             ...data,
             playback_id: playbackId,
             playbackId: playbackId,
             livepeer_stream_id: livepeerStreamId,
             is_live: Boolean(data.is_live || data.isLive),
             isLive: Boolean(data.is_live || data.isLive),
-          });
-        });
-        const list = Array.from(map.values());
+          };
+        }).filter(Boolean);
 
-        const DUMMY_USERNAMES = ["pirate_fm", "acid_vault", "dub_station"];
-        const cleaned = list.filter(
-          (c) =>
-            !DUMMY_USERNAMES.includes((c.username || "").toLowerCase()) &&
-            !c.is_dummy &&
-            !c.channel_id?.startsWith("chan-pirate") &&
-            !c.channel_id?.startsWith("chan-acid") &&
-            !c.channel_id?.startsWith("chan-dub")
-        );
-        setRawChannels(cleaned);
-        setLoading(false);
-        hasLoadedOnceRef.current = true;
-      },
-      (err) => {
-        if (!active) return;
-        api.get("/channels")
-          .then(({ data }) => {
-            if (!active) return;
-            let list = Array.isArray(data) ? data : [];
-            const DUMMY_USERNAMES = ["pirate_fm", "acid_vault", "dub_station"];
-            const cleaned = list.filter(
+        setRawChannels((prev) => {
+          const DUMMY_USERNAMES = ["pirate_fm", "acid_vault", "dub_station"];
+
+          if (!prev || prev.length === 0) {
+            const mappedFs = fsDocs.map((d) => ({
+              id: d.channel_id,
+              channel_id: d.channel_id,
+              username: d.username,
+              display_name: d.display_name || d.username,
+              photo_url: d.photo_url || null,
+              thumbnail_url: d.thumbnail_url || null,
+              category: d.category || "music",
+              stream_title: d.stream_title || "",
+              is_live: Boolean(d.is_live || d.isLive),
+              isLive: Boolean(d.is_live || d.isLive),
+              viewer_count: d.viewer_count || 0,
+              schedule: d.schedule || (d.schedule_json ? JSON.parse(d.schedule_json) : []),
+              playback_id: d.playback_id,
+              playbackId: d.playbackId,
+              livepeer_stream_id: d.livepeer_stream_id,
+            }));
+
+            return mappedFs.filter(
               (c) =>
                 !DUMMY_USERNAMES.includes((c.username || "").toLowerCase()) &&
                 !c.is_dummy &&
@@ -152,16 +170,50 @@ export default function Browse() {
                 !c.channel_id?.startsWith("chan-acid") &&
                 !c.channel_id?.startsWith("chan-dub")
             );
-            setRawChannels(cleaned);
-            setLoading(false);
-            hasLoadedOnceRef.current = true;
-          })
-          .catch(() => {
-            if (active) {
-              setLoading(false);
-              hasLoadedOnceRef.current = true;
-            }
+          }
+
+          // Merge Firestore live updates with API list
+          const fsMap = new Map();
+          fsDocs.forEach((d) => {
+            if (d.username) fsMap.set(d.username.toLowerCase(), d);
+            if (d.channel_id) fsMap.set(d.channel_id.toLowerCase(), d);
           });
+
+          return prev.map((c) => {
+            const fsData = fsMap.get(c.username?.toLowerCase()) || fsMap.get(c.channel_id?.toLowerCase());
+            if (fsData) {
+              return {
+                ...c,
+                photo_url: fsData.photo_url !== undefined ? fsData.photo_url : c.photo_url,
+                display_name: fsData.display_name || c.display_name,
+                thumbnail_url: fsData.thumbnail_url !== undefined ? fsData.thumbnail_url : c.thumbnail_url,
+                is_live: Boolean(fsData.is_live || fsData.isLive || c.is_live || c.isLive),
+                isLive: Boolean(fsData.is_live || fsData.isLive || c.is_live || c.isLive),
+                viewer_count: fsData.viewer_count ?? c.viewer_count,
+                stream_title: fsData.stream_title || c.stream_title,
+                category: fsData.category || c.category,
+                playback_id: fsData.playback_id || c.playback_id,
+                playbackId: fsData.playbackId || c.playbackId,
+                livepeer_stream_id: fsData.livepeer_stream_id || c.livepeer_stream_id,
+                schedule:
+                  fsData.schedule ||
+                  (fsData.schedule_json
+                    ? (() => {
+                        try {
+                          return JSON.parse(fsData.schedule_json);
+                        } catch (e) {
+                          return c.schedule;
+                        }
+                      })()
+                    : c.schedule),
+              };
+            }
+            return c;
+          });
+        });
+      },
+      (err) => {
+        console.warn("Firestore on Browse snapshot warning:", err);
       }
     );
 

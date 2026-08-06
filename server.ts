@@ -928,6 +928,25 @@ async function startServer() {
     }
   });
 
+  api.get("/files/:filename", (req, res, next) => {
+    const { filename } = req.params;
+    const extMatch = filename.match(/\.(png|jpg|jpeg|gif|webp)$/i);
+    if (extMatch) {
+      const ext = extMatch[1].toLowerCase();
+      const baseFilename = filename.substring(0, filename.length - extMatch[0].length);
+      const filePath = path.join(uploadsDir, baseFilename);
+      if (fs.existsSync(filePath)) {
+        let contentType = "image/jpeg";
+        if (ext === "png") contentType = "image/png";
+        if (ext === "webp") contentType = "image/webp";
+        if (ext === "gif") contentType = "image/gif";
+        res.setHeader("Content-Type", contentType);
+        return res.sendFile(filePath);
+      }
+    }
+    next();
+  });
+
   api.use("/files", express.static(uploadsDir));
   app.use("/api", api);
 
@@ -951,7 +970,7 @@ async function startServer() {
       const host = req.get("host") || "sparkztv.live";
 
       let title = "SPARKZ.TV // Your Stream, Your Mix, Your Rules";
-      let image = `${protocol}://${host}/og-image.png?v=${Date.now()}`;
+      let image = `${protocol}://${host}/og-image.png`;
       const url = `${protocol}://${host}${req.originalUrl}`;
 
       if (req.path.startsWith("/channel/")) {
@@ -973,19 +992,22 @@ async function startServer() {
           if (matchedChannel) {
             title = `${matchedChannel.display_name || matchedChannel.username} // ${matchedChannel.stream_title || "Live Stream"}`;
             
-            const cacheBuster = `?v=${Date.now()}`;
             let rawPhoto = matchedChannel.photo_url || matchedChannel.thumbnail_url;
             if (rawPhoto) {
               if (rawPhoto.includes("api.dicebear.com") && rawPhoto.includes("/svg")) {
                 rawPhoto = rawPhoto.replace("/svg", "/png");
               }
               if (rawPhoto.startsWith("http")) {
-                image = `${rawPhoto}${cacheBuster}`;
+                image = rawPhoto;
               } else {
-                image = `${protocol}://${host}${rawPhoto.startsWith("/") ? "" : "/"}${rawPhoto}${cacheBuster}`;
+                let cleanPhoto = rawPhoto;
+                if (cleanPhoto.startsWith("/api/files/") && !cleanPhoto.endsWith(".png") && !cleanPhoto.endsWith(".jpg") && !cleanPhoto.endsWith(".jpeg") && !cleanPhoto.endsWith(".webp") && !cleanPhoto.endsWith(".gif")) {
+                  cleanPhoto = `${cleanPhoto}.jpg`;
+                }
+                image = `${protocol}://${host}${cleanPhoto.startsWith("/") ? "" : "/"}${cleanPhoto}`;
               }
             } else {
-              image = `${protocol}://${host}/og-image.png${cacheBuster}`;
+              image = `${protocol}://${host}/og-image.png`;
             }
           }
         }
