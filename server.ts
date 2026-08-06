@@ -979,12 +979,20 @@ async function startServer() {
 
   api.get("/files/:filename", (req, res, next) => {
     const { filename } = req.params;
+    
+    // 1. Try matching with extension (e.g. filename is "some-id.jpg")
     const extMatch = filename.match(/\.(png|jpg|jpeg|gif|webp)$/i);
     if (extMatch) {
       const ext = extMatch[1].toLowerCase();
       const baseFilename = filename.substring(0, filename.length - extMatch[0].length);
-      const filePath = path.join(uploadsDir, baseFilename);
-      if (fs.existsSync(filePath)) {
+      
+      // Check if file exists under the extensionless base name or the full filename
+      let filePath = path.join(uploadsDir, baseFilename);
+      if (!fs.existsSync(filePath)) {
+        filePath = path.join(uploadsDir, filename);
+      }
+      
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
         let contentType = "image/jpeg";
         if (ext === "png") contentType = "image/png";
         if (ext === "webp") contentType = "image/webp";
@@ -993,6 +1001,15 @@ async function startServer() {
         return res.sendFile(filePath);
       }
     }
+
+    // 2. Try matching without extension (e.g. filename is "some-id" with no trailing .jpg)
+    const directPath = path.join(uploadsDir, filename);
+    if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+      // Default to image/jpeg since all user uploads in our app are images
+      res.setHeader("Content-Type", "image/jpeg");
+      return res.sendFile(directPath);
+    }
+
     next();
   });
 
@@ -1165,9 +1182,12 @@ async function startServer() {
           .replace(/'/g, "&#039;");
       };
 
+      // Strip any query parameters or hashes from the absolute image URL to prevent Facebook crawler errors
+      const cleanImage = image ? image.split("?")[0].split("#")[0] : "";
+
       const escapedTitle = escapeHtml(title);
       const escapedDescription = escapeHtml(description);
-      const escapedImage = escapeHtml(image);
+      const escapedImage = escapeHtml(cleanImage);
       const escapedUrl = escapeHtml(url);
 
       html = html.replace(/<title>.*?<\/title>/gi, `<title>${escapedTitle}</title>`);
