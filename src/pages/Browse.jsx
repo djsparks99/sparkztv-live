@@ -32,6 +32,8 @@ export default function Browse() {
   const [followingList, setFollowingList] = useState([]);
   const [rawChannels, setRawChannels] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [backendLoading, setBackendLoading] = useState(true);
+  const isScreenLoading = loading || backendLoading;
 
   useLivepeerAutoPoll();
   useMetaTags({
@@ -109,11 +111,24 @@ export default function Browse() {
   }, []);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
+    setBackendLoading(true);
+
+    api.get("/channels")
+      .then(() => {
+        if (active) setBackendLoading(false);
+      })
+      .catch((err) => {
+        console.warn("Initial channels fetch on Browse failed/timed out:", err);
+        if (active) setBackendLoading(false);
+      });
+
     const q = collection(db, "channels");
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
+        if (!active) return;
         const map = new Map();
         snapshot.forEach((doc) => {
           const docId = doc.id;
@@ -165,8 +180,10 @@ export default function Browse() {
         setLoading(false);
       },
       (err) => {
+        if (!active) return;
         api.get("/channels")
           .then(({ data }) => {
+            if (!active) return;
             let list = Array.isArray(data) ? data : [];
             const DUMMY_USERNAMES = ["pirate_fm", "acid_vault", "dub_station"];
             const cleaned = list.filter(
@@ -180,11 +197,16 @@ export default function Browse() {
             setRawChannels(cleaned);
             setLoading(false);
           })
-          .catch(() => setLoading(false));
+          .catch(() => {
+            if (active) setLoading(false);
+          });
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [user]);
 
   useEffect(() => {
@@ -233,7 +255,7 @@ export default function Browse() {
   return (
     <div className="min-h-screen">
       {/* Dynamic Twitch-style stream carousel */}
-      <StreamCarousel channels={rawChannels} allChannels={rawChannels} isLoading={loading} />
+      <StreamCarousel channels={rawChannels} allChannels={rawChannels} isLoading={isScreenLoading} />
 
       <Marquee items={CATEGORIES.map((c) => c.toUpperCase())} />
 
@@ -287,17 +309,38 @@ export default function Browse() {
           ))}
         </div>
 
-        {loading ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="border border-[#27272a] bg-[#0a0a0a]">
-                <div className="aspect-video animate-pulse bg-[#111]" />
-                <div className="p-4">
-                  <div className="h-4 w-3/4 animate-pulse bg-[#111]" />
-                  <div className="mt-2 h-3 w-1/2 animate-pulse bg-[#111]" />
-                </div>
+        {isScreenLoading && rawChannels.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 border border-dashed border-[#27272a] bg-[#09090b]/40 relative overflow-hidden" data-testid="directory-loading">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(229,255,0,0.02),transparent_70%)] pointer-events-none" />
+            <div className="relative z-10 flex flex-col items-center">
+              {/* Spinning / Pulsing Radar Scan Animation */}
+              <div className="relative h-16 w-16 mb-6 flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full border border-[#e5ff00]/10 animate-ping" />
+                <div className="absolute h-12 w-12 rounded-full border border-[#e5ff00]/30 animate-pulse" />
+                <Radio className="h-6 w-6 text-[#e5ff00] animate-bounce" />
               </div>
-            ))}
+              <div className="font-display text-lg font-black uppercase tracking-widest text-[#e5ff00] animate-pulse">
+                // SCANNING NETWORK SIGNALS...
+              </div>
+              <p className="mt-2 font-mono text-[10px] text-zinc-500 uppercase tracking-widest text-center max-w-sm">
+                Awaiting connection response from primary transmitter. Please standby.
+              </p>
+            </div>
+            
+            {/* 4 Skeleton Cards underneath the Scanner to maintain visual weight */}
+            <div className="w-full mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 opacity-35">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="border border-[#1a1a1d] bg-[#070709] flex flex-col relative overflow-hidden">
+                  <div className="aspect-video w-full bg-[#121215] relative">
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#1c1c22] to-transparent animate-shimmer-slide" />
+                  </div>
+                  <div className="p-4 flex flex-col gap-2">
+                    <div className="h-4 w-3/4 bg-[#121215] rounded" />
+                    <div className="h-3 w-1/2 bg-[#121215] rounded" />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : safeChannels.length === 0 ? (
           <div
@@ -319,14 +362,22 @@ export default function Browse() {
             </Link>
           </div>
         ) : (
-          <div
-            data-testid="channels-grid"
-            className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-          >
-            {safeChannels.map((c, idx) => {
-              const cardKey = c.id || c.channel_id || c.username || `channel-card-${idx}`;
-              return <ChannelCard key={cardKey} channel={c} />;
-            })}
+          <div className="relative">
+            {isScreenLoading && (
+              <div className="absolute -top-12 right-0 flex items-center gap-1.5 font-mono text-[9px] text-[#e5ff00] uppercase tracking-widest animate-pulse z-20 bg-black/80 px-2.5 py-1 rounded border border-[#e5ff00]/20">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#e5ff00] animate-ping" />
+                Updating Grid...
+              </div>
+            )}
+            <div
+              data-testid="channels-grid"
+              className={`grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 transition-opacity duration-300 ${isScreenLoading ? "opacity-75 select-none pointer-events-none" : ""}`}
+            >
+              {safeChannels.map((c, idx) => {
+                const cardKey = c.id || c.channel_id || c.username || `channel-card-${idx}`;
+                return <ChannelCard key={cardKey} channel={c} />;
+              })}
+            </div>
           </div>
         )}
       </section>

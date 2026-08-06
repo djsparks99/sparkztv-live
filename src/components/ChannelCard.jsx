@@ -39,6 +39,10 @@ function getCleanUsername(channel) {
     return "djsparkz";
   }
 
+  if (cid && cid !== "undefined" && cid !== "null") {
+    return cid;
+  }
+
   return "djsparkz";
 }
 

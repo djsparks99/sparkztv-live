@@ -1016,6 +1016,22 @@ async function startServer() {
                 }
               }
             }
+          } else if (data.type === "reaction") {
+            const reactionPayload = {
+              type: "reaction",
+              reaction: data.reaction,
+              sender_uid: client.uid,
+              sender_username: client.username,
+              timestamp: new Date().toISOString()
+            };
+            const roomClients = chatRooms.get(roomName);
+            if (roomClients) {
+              for (const c of roomClients) {
+                if (c.ws.readyState === 1) {
+                  c.ws.send(JSON.stringify(reactionPayload));
+                }
+              }
+            }
           } else {
             const text = data.text || "";
             if (!text.trim()) return;

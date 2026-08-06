@@ -265,7 +265,7 @@ export default function StreamCarousel({ allChannels = [], channels = [], isLoad
       ` }} />
 
       {/* Horizontal Sliding Carousel Container, Skeleton Screens, or Empty State */}
-      {isLoading ? (
+      {isLoading && carouselItems.length === 0 ? (
         <div className="relative mx-auto max-w-[1440px] px-6 py-6 overflow-visible" data-testid="carousel-loading-skeletons">
           <div 
             className="flex gap-6 overflow-x-auto scrollbar-none pb-4"
@@ -382,7 +382,7 @@ export default function StreamCarousel({ allChannels = [], channels = [], isLoad
           </div>
         </div>
       ) : (
-        <div className="relative mx-auto max-w-[1440px] px-6 py-6 overflow-visible">
+        <div className={`relative mx-auto max-w-[1440px] px-6 py-6 overflow-visible transition-opacity duration-300 ${isLoading ? "opacity-75 select-none pointer-events-none" : ""}`}>
           <div 
             ref={scrollContainerRef}
             className="flex gap-6 overflow-x-auto scrollbar-none scroll-smooth snap-x snap-mandatory pb-4"
@@ -417,7 +417,13 @@ export default function StreamCarousel({ allChannels = [], channels = [], isLoad
               return (
                 <div 
                   key={`${slug}-${idx}`}
-                  className="snap-start shrink-0 w-[310px] sm:w-[360px] md:w-[400px] border border-[#1e1e21] bg-[#09090b] hover:border-[#e5ff00]/60 transition-all duration-300 flex flex-col group relative overflow-hidden"
+                  onClick={(e) => {
+                    if (e.target.closest("button") || e.target.closest("a")) {
+                      return;
+                    }
+                    navigate(`/channel/${slug}`);
+                  }}
+                  className="snap-start shrink-0 w-[310px] sm:w-[360px] md:w-[400px] border border-[#1e1e21] bg-[#09090b] hover:border-[#e5ff00]/60 cursor-pointer transition-all duration-300 flex flex-col group relative overflow-hidden"
                 >
                   {/* 16:9 Landscape Video Preview/Thumbnail Stage */}
                   <div className="relative aspect-[16/9] w-full overflow-hidden bg-black">

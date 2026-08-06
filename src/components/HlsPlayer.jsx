@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import Hls from "hls.js";
 import { Play, Pause, Volume2, VolumeX, Maximize, Radio, Settings, Square } from "lucide-react";
+import FloatingReactions from "./FloatingReactions";
 
 export default function HlsPlayer({
   playbackId,
@@ -170,6 +171,9 @@ export default function HlsPlayer({
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
       />
+
+      {/* Floating Reactions overlay */}
+      <FloatingReactions position="right" />
 
       {/* Initial Muted Autoplay Warning Banner if Muted */}
       {controls && isMuted && isPlaying && (

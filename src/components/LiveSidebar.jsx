@@ -97,7 +97,7 @@ function getTargetUsername(c) {
     }
   }
 
-  return "djsparkz";
+  return cid || "djsparkz";
 }
 
 export default function LiveSidebar() {

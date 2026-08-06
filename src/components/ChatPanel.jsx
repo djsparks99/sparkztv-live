@@ -4,6 +4,14 @@ import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { Send, LogIn, User, Smile, Zap, Crown, Shield, Gem, Sparkles, X, Flame, Calendar, Users } from "lucide-react";
 import { Link } from "react-router-dom";
+import FloatingReactions from "./FloatingReactions";
+
+const REACTIONS = [
+  { char: "💿", label: "BANGER", color: "hover:border-cyan-500 hover:bg-cyan-500/10 text-cyan-400" },
+  { char: "🔥", label: "FIRE", color: "hover:border-[#e5ff00] hover:bg-[#e5ff00]/10 text-[#e5ff00]" },
+  { char: "🔊", label: "BASS", color: "hover:border-purple-500 hover:bg-purple-500/10 text-purple-400" },
+  { char: "👻", label: "SICK", color: "hover:border-pink-500 hover:bg-pink-500/10 text-pink-400" },
+];
 
 function wsUrl(username, token, guestName = "") {
   const httpUrl = BACKEND || getAbsoluteOrigin() || window.location.origin;
@@ -263,6 +271,12 @@ export default function ChatPanel({ username }) {
           } else if (data.type === "system") {
             setSystemLine(data.message);
             setTimeout(() => setSystemLine(null), 6000);
+          } else if (data.type === "reaction") {
+            window.dispatchEvent(
+              new CustomEvent("stream-reaction", {
+                detail: { reaction: data.reaction, sender: data.sender_username }
+              })
+            );
           }
         } catch {}
       };
@@ -335,6 +349,16 @@ export default function ChatPanel({ username }) {
         lastTypingSentRef.current = 0;
       }
     }
+  };
+
+  const sendReaction = (reactionEmoji) => {
+    if (!wsRef.current || wsRef.current.readyState !== 1) return;
+    wsRef.current.send(
+      JSON.stringify({
+        type: "reaction",
+        reaction: reactionEmoji,
+      })
+    );
   };
 
   const send = (e) => {
@@ -436,7 +460,8 @@ export default function ChatPanel({ username }) {
       </header>
 
       {/* Message List */}
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4 scrollbar-thin">
+      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4 scrollbar-thin relative">
+        <FloatingReactions position="right" />
         {(!Array.isArray(messages) || messages.length === 0) && !systemLine && (
           <div className="py-12 text-center">
             <Sparkles className="mx-auto h-6 w-6 text-zinc-700 mb-2" />
@@ -709,6 +734,28 @@ export default function ChatPanel({ username }) {
                 EARN 15 / 10S
               </span>
             )}
+          </div>
+
+          {/* Reaction Buttons Bar */}
+          <div className="flex items-center gap-1.5 border-b border-[#27272a]/40 pb-2 mb-1" data-testid="reactions-bar">
+            <span className="font-mono text-[9px] uppercase tracking-widest text-zinc-500 select-none mr-1">// REACT:</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {REACTIONS.map((r) => (
+                <button
+                  key={r.label}
+                  type="button"
+                  onClick={() => sendReaction(r.char)}
+                  disabled={!connected}
+                  title={r.label}
+                  className={`flex items-center gap-1 border border-zinc-800 bg-zinc-950 px-2 py-0.5 rounded-full font-mono text-[9px] font-bold uppercase transition-all duration-150 active:scale-90 ${r.color} ${
+                    !connected ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
+                >
+                  <span className="text-xs leading-none">{r.char}</span>
+                  <span className="text-[8px] font-mono tracking-wider">{r.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <form onSubmit={send} className="flex gap-2" data-testid="chat-form">
