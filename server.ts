@@ -414,9 +414,10 @@ app.options("*", cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Automatically strip tracking query parameters (like fbclid) from incoming requests
+// Automatically strip tracking query parameters (like fbclid) from incoming requests, except for static assets
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.query.fbclid || req.query.utm_source || req.query.utm_medium) {
+  const isStaticAsset = /\.(png|jpg|jpeg|gif|webp|ico|svg|css|js|xml|txt)$/i.test(req.path);
+  if (!isStaticAsset && (req.query.fbclid || req.query.utm_source || req.query.utm_medium)) {
     return res.redirect(301, req.path);
   }
   next();
@@ -999,7 +1000,53 @@ async function startServer() {
   app.use("/api", api);
 
   const distPath = path.join(process.cwd(), "dist");
+  const publicPath = path.join(process.cwd(), "public");
+
+  // Helper middleware to serve static files with explicit and correct MIME Content-Type headers
+  const serveStaticFileWithMime = (dir: string) => {
+    return (req: Request, res: Response, next: NextFunction) => {
+      let decodedPath;
+      try {
+        decodedPath = decodeURIComponent(req.path);
+      } catch (err) {
+        decodedPath = req.path;
+      }
+
+      const filePath = path.join(dir, decodedPath);
+      try {
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+          const ext = path.extname(filePath).toLowerCase();
+          const mimeTypes: Record<string, string> = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+            ".svg": "image/svg+xml",
+            ".ico": "image/x-icon",
+            ".css": "text/css",
+            ".js": "application/javascript",
+            ".json": "application/json",
+            ".xml": "application/xml",
+            ".txt": "text/plain",
+          };
+          const contentType = mimeTypes[ext] || "application/octet-stream";
+          res.setHeader("Content-Type", contentType);
+          return res.sendFile(filePath);
+        }
+      } catch (err) {
+        // Fall through
+      }
+      next();
+    };
+  };
+
+  // Serve static assets with explicit MIME headers and 200 OK before SPA routes/catchalls
+  app.use(serveStaticFileWithMime(distPath));
+  app.use(serveStaticFileWithMime(publicPath));
+
   app.use(express.static(distPath, { index: false }));
+  app.use(express.static(publicPath, { index: false }));
 
   app.get("*", async (req, res, next) => {
     if (req.path.includes(".") && !req.path.endsWith(".html")) {
