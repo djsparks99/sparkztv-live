@@ -118,6 +118,8 @@ export default function Browse() {
             playback_id: playbackId,
             playbackId: playbackId,
             livepeer_stream_id: livepeerStreamId,
+            is_live: Boolean(data.is_live || data.isLive),
+            isLive: Boolean(data.is_live || data.isLive),
           });
         });
         const list = Array.from(map.values());

@@ -4,6 +4,11 @@ export function useStableLiveChannels(channels, gracePeriodMs = 6000) {
   const [stableChannels, setStableChannels] = useState(channels);
   const pendingOfflinesRef = useRef({}); // channelUsername/id -> timeoutId
 
+  // Prevent false negatives: immediately update stableChannels if empty but incoming channels are loaded
+  if (stableChannels.length === 0 && channels.length > 0) {
+    setStableChannels(channels);
+  }
+
   useEffect(() => {
     setStableChannels((prevStable) => {
       const incomingMap = new Map(channels.map((c) => [c.username?.toLowerCase() || c.id, c]));

@@ -105,6 +105,8 @@ export default function Directory() {
             playback_id: playbackId,
             playbackId: playbackId,
             livepeer_stream_id: livepeerStreamId,
+            is_live: Boolean(data.is_live || data.isLive),
+            isLive: Boolean(data.is_live || data.isLive),
           };
         }).filter(Boolean);
 
@@ -139,7 +141,7 @@ export default function Directory() {
                 photo_url: fsData.photo_url !== undefined ? fsData.photo_url : c.photo_url,
                 display_name: fsData.display_name || c.display_name,
                 thumbnail_url: fsData.thumbnail_url !== undefined ? fsData.thumbnail_url : c.thumbnail_url,
-                is_live: Boolean(fsData.is_live ?? fsData.isLive ?? c.is_live),
+                is_live: Boolean(fsData.is_live || fsData.isLive || c.is_live || c.isLive),
                 viewer_count: fsData.viewer_count ?? c.viewer_count,
                 stream_title: fsData.stream_title || c.stream_title,
                 category: fsData.category || c.category,

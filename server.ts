@@ -364,33 +364,34 @@ async function syncMasterChannelLiveStatus(force = false) {
     const channel = await getMasterChannel();
     const client = getIvsClient();
     
-    let isLive = channel.is_live;
-    let checkedAws = false;
+    let isLiveAws = false;
+    let isLiveFirestore = false;
 
     if (client && channel?.ivs_channel_arn && !channel.ivs_channel_arn.includes("fallback")) {
       try {
         const response = await client.send(new GetStreamCommand({ channelArn: channel.ivs_channel_arn }));
-        isLive = !!response.stream;
-        checkedAws = true;
+        isLiveAws = !!response.stream;
       } catch (err: any) {
-        console.error("[IVS Sync] AWS stream check failed, falling back to Firestore status:", err.message);
+        console.error("[IVS Sync] AWS stream check failed:", err.message);
       }
     }
 
-    // Fall back to Firestore status to preserve webhook/dashboard-created streams
-    if (!checkedAws && dbFirestore) {
+    if (dbFirestore) {
       try {
         const docSnap = await dbFirestore.collection("channels").doc("djsparkz").get();
         if (docSnap.exists) {
           const fsData = docSnap.data();
-          if (fsData && fsData.is_live !== undefined) {
-            isLive = Boolean(fsData.is_live || fsData.isLive);
+          if (fsData) {
+            isLiveFirestore = Boolean(fsData.is_live || fsData.isLive);
           }
         }
       } catch (fsErr: any) {
         console.warn("[IVS Sync] Failed to read fallback live status from Firestore:", fsErr.message);
       }
     }
+
+    // Force Live Feed Detection: EITHER AWS IVS is live OR Firestore record is live
+    const isLive = isLiveAws || isLiveFirestore;
 
     if (channel.is_live !== isLive) {
       channel.is_live = isLive;
