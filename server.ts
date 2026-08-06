@@ -1016,6 +1016,41 @@ async function startServer() {
   api.use("/files", express.static(uploadsDir));
   app.use("/api", api);
 
+  // Dedicated explicit routes for social share images, serving raw binary buffers with forced correct Content-Type headers
+  app.get("/og-image.jpg", (req, res) => {
+    const filePath = path.join(process.cwd(), "public", "og-image.jpg");
+    try {
+      if (fs.existsSync(filePath)) {
+        const buffer = fs.readFileSync(filePath);
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Content-Length", buffer.length);
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        res.status(200);
+        return res.end(buffer);
+      }
+    } catch (err: any) {
+      console.error("[OG-Image] Error serving og-image.jpg:", err.message);
+    }
+    return res.status(404).send("Not Found");
+  });
+
+  app.get("/og-image.png", (req, res) => {
+    const filePath = path.join(process.cwd(), "public", "og-image.png");
+    try {
+      if (fs.existsSync(filePath)) {
+        const buffer = fs.readFileSync(filePath);
+        res.setHeader("Content-Type", "image/png");
+        res.setHeader("Content-Length", buffer.length);
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        res.status(200);
+        return res.end(buffer);
+      }
+    } catch (err: any) {
+      console.error("[OG-Image] Error serving og-image.png:", err.message);
+    }
+    return res.status(404).send("Not Found");
+  });
+
   const distPath = path.join(process.cwd(), "dist");
   const publicPath = path.join(process.cwd(), "public");
 
