@@ -1018,9 +1018,24 @@ async function startServer() {
 
   // Dedicated explicit routes for social share images, serving raw binary buffers with forced correct Content-Type headers
   app.get("/og-image.jpg", (req, res) => {
-    const filePath = path.join(process.cwd(), "public", "og-image.jpg");
+    const paths = [
+      path.join(process.cwd(), "public", "og-image.jpg"),
+      path.join(process.cwd(), "dist", "og-image.jpg"),
+      path.join(__dirname, "public", "og-image.jpg"),
+      path.join(__dirname, "og-image.jpg"),
+      path.join(__dirname, "..", "public", "og-image.jpg"),
+      path.join(__dirname, "..", "dist", "og-image.jpg")
+    ];
+    let filePath = "";
+    for (const p of paths) {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+        filePath = p;
+        break;
+      }
+    }
+
     try {
-      if (fs.existsSync(filePath)) {
+      if (filePath) {
         const buffer = fs.readFileSync(filePath);
         res.setHeader("Content-Type", "image/jpeg");
         res.setHeader("Content-Length", buffer.length);
@@ -1035,9 +1050,24 @@ async function startServer() {
   });
 
   app.get("/og-image.png", (req, res) => {
-    const filePath = path.join(process.cwd(), "public", "og-image.png");
+    const paths = [
+      path.join(process.cwd(), "public", "og-image.png"),
+      path.join(process.cwd(), "dist", "og-image.png"),
+      path.join(__dirname, "public", "og-image.png"),
+      path.join(__dirname, "og-image.png"),
+      path.join(__dirname, "..", "public", "og-image.png"),
+      path.join(__dirname, "..", "dist", "og-image.png")
+    ];
+    let filePath = "";
+    for (const p of paths) {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+        filePath = p;
+        break;
+      }
+    }
+
     try {
-      if (fs.existsSync(filePath)) {
+      if (filePath) {
         const buffer = fs.readFileSync(filePath);
         res.setHeader("Content-Type", "image/png");
         res.setHeader("Content-Length", buffer.length);
