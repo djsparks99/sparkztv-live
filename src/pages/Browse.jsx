@@ -59,6 +59,55 @@ export default function Browse() {
     return () => window.removeEventListener("follow-changed", fetchFollowing);
   }, [user]);
 
+  // Periodic interval timer to fetch current channels from backend to ensure active stream status is always up-to-date
+  useEffect(() => {
+    const fetchFromBackend = () => {
+      api.get("/channels")
+        .then(({ data }) => {
+          let list = Array.isArray(data) ? data : [];
+          const DUMMY_USERNAMES = ["pirate_fm", "acid_vault", "dub_station"];
+          const cleaned = list.filter(
+            (c) =>
+              !DUMMY_USERNAMES.includes((c.username || "").toLowerCase()) &&
+              !c.is_dummy &&
+              !c.channel_id?.startsWith("chan-pirate") &&
+              !c.channel_id?.startsWith("chan-acid") &&
+              !c.channel_id?.startsWith("chan-dub")
+          );
+          setRawChannels((prev) => {
+            // Keep existing keys if not modified to avoid redundant rerenders but update live states
+            const prevMap = new Map(prev.map(p => [p.id || p.username, p]));
+            let changed = prev.length !== cleaned.length;
+            
+            const updated = cleaned.map((c) => {
+              const key = c.id || c.username;
+              const existing = prevMap.get(key);
+              if (!existing) {
+                changed = true;
+                return c;
+              }
+              const isLiveChanged = existing.is_live !== c.is_live || existing.isLive !== c.isLive;
+              const isViewerChanged = existing.viewer_count !== c.viewer_count || existing.viewerCount !== c.viewerCount;
+              if (isLiveChanged || isViewerChanged || existing.stream_title !== c.stream_title) {
+                changed = true;
+                return { ...existing, ...c };
+              }
+              return existing;
+            });
+            
+            return changed ? updated : prev;
+          });
+        })
+        .catch((err) => {
+          console.warn("Failed to periodically refresh channels from backend:", err);
+        });
+    };
+
+    // Poll every 10 seconds
+    const intervalId = setInterval(fetchFromBackend, 10000);
+    return () => clearInterval(intervalId);
+  }, []);
+
   useEffect(() => {
     setLoading(true);
     const q = collection(db, "channels");
@@ -184,7 +233,7 @@ export default function Browse() {
   return (
     <div className="min-h-screen">
       {/* Dynamic Twitch-style stream carousel */}
-      <StreamCarousel channels={rawChannels} allChannels={rawChannels} />
+      <StreamCarousel channels={rawChannels} allChannels={rawChannels} isLoading={loading} />
 
       <Marquee items={CATEGORIES.map((c) => c.toUpperCase())} />
 

@@ -23,7 +23,7 @@ function hashPick(str, arr) {
   return arr[Math.abs(h) % arr.length];
 }
 
-export default function StreamCarousel({ allChannels = [], channels = [] }) {
+export default function StreamCarousel({ allChannels = [], channels = [], isLoading = false }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const scrollContainerRef = useRef(null);
@@ -151,6 +151,41 @@ export default function StreamCarousel({ allChannels = [], channels = [] }) {
     }
   };
 
+  // Touch gesture state
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const touchEndX = useRef(0);
+  const touchEndY = useRef(0);
+
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    // Reset end coords
+    touchEndX.current = e.touches[0].clientX;
+    touchEndY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchMove = (e) => {
+    touchEndX.current = e.touches[0].clientX;
+    touchEndY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = () => {
+    const diffX = touchStartX.current - touchEndX.current;
+    const diffY = touchStartY.current - touchEndY.current;
+
+    // Detect horizontal swipe with minimum threshold (50px) and angle (more horizontal than vertical)
+    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
+      if (diffX > 0) {
+        // Swiped left, slide to the right
+        scroll("right");
+      } else {
+        // Swiped right, slide to the left
+        scroll("left");
+      }
+    }
+  };
+
   return (
     <section 
       id="stream-carousel"
@@ -171,13 +206,23 @@ export default function StreamCarousel({ allChannels = [], channels = [] }) {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 border border-[#27272a] bg-[#09090b] px-3.5 py-2 font-mono text-[10px] text-zinc-300">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 animate-ping" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-              </span>
-              <span className="font-bold text-white">{totalLiveViewers} VIEWERS ACTIVE</span>
-            </div>
+            {isLoading ? (
+              <div className="flex items-center gap-2 border border-[#27272a] bg-[#09090b] px-3.5 py-2 font-mono text-[10px] text-zinc-300">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-[#e5ff00] opacity-75 animate-ping" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#e5ff00]" />
+                </span>
+                <span className="font-bold text-[#e5ff00] animate-pulse">SCANNING FOR SIGNALS...</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 border border-[#27272a] bg-[#09090b] px-3.5 py-2 font-mono text-[10px] text-zinc-300">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 animate-ping" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                </span>
+                <span className="font-bold text-white">{totalLiveViewers} VIEWERS ACTIVE</span>
+              </div>
+            )}
 
             {/* Scroll buttons on the top right */}
             {carouselItems.length > 1 && (
@@ -204,13 +249,120 @@ export default function StreamCarousel({ allChannels = [], channels = [] }) {
         </div>
       </div>
 
-      {/* Horizontal Sliding Carousel Container or Empty State */}
-      {carouselItems.length === 0 ? (
+      {/* Custom Scoped CSS for Shimmer Animation */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes shimmer-slide {
+          0% {
+            transform: translateX(-100%);
+          }
+          100% {
+            transform: translateX(100%);
+          }
+        }
+        .animate-shimmer-slide {
+          animation: shimmer-slide 1.6s infinite ease-in-out;
+        }
+      ` }} />
+
+      {/* Horizontal Sliding Carousel Container, Skeleton Screens, or Empty State */}
+      {isLoading ? (
+        <div className="relative mx-auto max-w-[1440px] px-6 py-6 overflow-visible" data-testid="carousel-loading-skeletons">
+          <div 
+            className="flex gap-6 overflow-x-auto scrollbar-none pb-4"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            {[1, 2, 3].map((num) => (
+              <div 
+                key={`carousel-skeleton-${num}`}
+                className="shrink-0 w-[310px] sm:w-[360px] md:w-[400px] border border-[#1a1a1d] bg-[#070709] flex flex-col relative overflow-hidden"
+              >
+                {/* 16:9 Landscape Video Preview/Thumbnail Stage Skeleton */}
+                <div className="relative aspect-[16/9] w-full bg-[#121215] overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#1c1c22] to-transparent animate-shimmer-slide" />
+                  
+                  {/* Upper-Left Live Badge Placeholder */}
+                  <div className="absolute left-3 top-3">
+                    <div className="h-5 w-12 bg-[#1d1d21] animate-pulse" />
+                  </div>
+
+                  {/* Upper-Right Category Placeholder */}
+                  <div className="absolute right-3 top-3">
+                    <div className="h-5 w-16 bg-[#1d1d21] animate-pulse" />
+                  </div>
+                </div>
+
+                {/* Stream Description & Broadcaster Metadata Body Skeleton */}
+                <div className="p-4 flex gap-3 flex-1 min-h-[105px]">
+                  <div className="shrink-0">
+                    <div className="h-10 w-10 border border-[#1e1e21] bg-[#121215] animate-pulse" />
+                  </div>
+
+                  <div className="min-w-0 flex-1 flex flex-col gap-2 justify-center">
+                    {/* Title placeholder */}
+                    <div className="h-4 w-3/4 bg-[#121215] animate-pulse" />
+                    {/* Broadcaster + Username row placeholder */}
+                    <div className="h-3 w-1/2 bg-[#121215] animate-pulse" />
+                    {/* Bio placeholder */}
+                    <div className="h-2.5 w-5/6 bg-[#121215] animate-pulse mt-0.5" />
+                  </div>
+                </div>
+
+                {/* CTA Action Bar footer Skeleton */}
+                <div className="p-4 pt-0 border-t border-[#121214] mt-auto flex items-center justify-between gap-2">
+                  <div className="h-7 w-[80px] bg-[#121215] border border-[#1a1a1d] animate-pulse" />
+                  <div className="h-3 w-20 bg-[#121215] animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : carouselItems.length === 0 ? (
         <div className="relative mx-auto max-w-[1440px] px-6 py-12" data-testid="carousel-empty-state">
           <div className="border border-dashed border-[#27272a] bg-[#09090b]/40 p-12 text-center relative overflow-hidden">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(229,255,0,0.03),transparent_60%)] pointer-events-none" />
             <div className="relative z-10 flex flex-col items-center">
-              <Radio className="h-10 w-10 text-zinc-600 animate-pulse mb-3" />
+              {/* Premium dark-themed cyber transmitter SVG illustration */}
+              <svg width="140" height="140" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="mb-4">
+                {/* Cyber Grid background circle */}
+                <circle cx="50" cy="50" r="48" stroke="#1f1f23" strokeWidth="1" strokeDasharray="3 3" />
+                <circle cx="50" cy="50" r="36" stroke="#141417" strokeWidth="1" />
+                <circle cx="50" cy="50" r="24" stroke="#141417" strokeWidth="1" />
+                
+                {/* Crosshairs */}
+                <line x1="50" y1="2" x2="50" y2="98" stroke="#161619" strokeWidth="0.5" />
+                <line x1="2" y1="50" x2="98" y2="50" stroke="#161619" strokeWidth="0.5" />
+
+                {/* Outer Signal Waves */}
+                <path d="M25 45 C30 35, 70 35, 75 45" stroke="#27272a" strokeWidth="1.5" strokeLinecap="round" className="animate-pulse" />
+                <path d="M20 40 C30 25, 70 25, 80 40" stroke="#27272a" strokeWidth="1" strokeLinecap="round" strokeDasharray="2 2" />
+                
+                {/* Neon Active Signal Waves */}
+                <path d="M30 50 C35 42, 65 42, 70 50" stroke="#e5ff00" strokeWidth="2" strokeLinecap="round" className="animate-pulse" opacity="0.8" />
+                <path d="M35 55 C38 50, 62 50, 65 55" stroke="#e5ff00" strokeWidth="1.5" strokeLinecap="round" opacity="0.4" />
+
+                {/* Cyber Tower / Antenna structure */}
+                {/* Base stand */}
+                <path d="M40 85 L44 72 L56 72 L60 85" stroke="#3f3f46" strokeWidth="2" strokeLinejoin="round" />
+                <path d="M44 72 L47 55 L53 55 L56 72" stroke="#52525b" strokeWidth="1.5" strokeLinejoin="round" />
+                <line x1="44" y1="72" x2="56" y2="72" stroke="#52525b" strokeWidth="1" />
+                <line x1="47" y1="55" x2="53" y2="55" stroke="#71717a" strokeWidth="1" />
+
+                {/* Cross beams inside tower */}
+                <line x1="40" y1="85" x2="56" y2="72" stroke="#27272a" strokeWidth="1" />
+                <line x1="60" y1="85" x2="44" y2="72" stroke="#27272a" strokeWidth="1" />
+                <line x1="44" y1="72" x2="53" y2="55" stroke="#27272a" strokeWidth="1" />
+                <line x1="56" y1="72" x2="47" y2="55" stroke="#27272a" strokeWidth="1" />
+
+                {/* Main transmitter rod and emitter bulb */}
+                <line x1="50" y1="55" x2="50" y2="35" stroke="#e5ff00" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="50" cy="35" r="4" fill="#000" stroke="#e5ff00" strokeWidth="2.5" className="animate-ping origin-center" style={{ transformOrigin: "50px 35px" }} />
+                <circle cx="50" cy="35" r="3" fill="#e5ff00" />
+                <circle cx="50" cy="35" r="1" fill="#fff" />
+                
+                {/* Status indicator glitch line at the bottom */}
+                <rect x="35" y="88" width="30" height="2" fill="#18181b" rx="1" />
+                <circle cx="50" cy="89" r="1.5" fill="#ef4444" className="animate-pulse" />
+              </svg>
               <div className="font-display text-lg font-black uppercase tracking-wider text-zinc-400">
                 // NO ACTIVE TRANSMISSIONS
               </div>
@@ -235,6 +387,9 @@ export default function StreamCarousel({ allChannels = [], channels = [] }) {
             ref={scrollContainerRef}
             className="flex gap-6 overflow-x-auto scrollbar-none scroll-smooth snap-x snap-mandatory pb-4"
             style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
           >
             {carouselItems.map((channel, idx) => {
               const isLive = Boolean(channel.is_live || channel.isLive);

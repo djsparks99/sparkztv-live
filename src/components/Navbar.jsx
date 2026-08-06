@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth-context";
-import { Radio, User, LogOut, LayoutDashboard, Settings, Tv, ChevronDown, Search, Sun, Moon } from "lucide-react";
+import { Radio, User, LogOut, LayoutDashboard, Settings, Tv, ChevronDown, Search, Sun, Moon, Compass, Layers, MessageSquare } from "lucide-react";
 import { fileUrl } from "@/lib/api";
 import NotificationBell from "@/components/NotificationBell";
 // Transparent yellow speech bubble logo sticker icon with cute cartoon eyes
@@ -111,22 +111,6 @@ export default function Navbar() {
             </span>
           </Link>
 
-          <nav className="hidden items-center gap-1 md:flex">
-            <NavItem to="/" testid="nav-browse">
-              BROWSE
-            </NavItem>
-            <NavItem to="/directory" testid="nav-directory">
-              DIRECTORY
-            </NavItem>
-            <NavItem to="/lounge" testid="nav-lounge">
-              THE LOUNGE
-            </NavItem>
-            {user && (
-              <NavItem to="/dashboard" testid="nav-dashboard">
-                STUDIO
-              </NavItem>
-            )}
-          </nav>
         </div>
 
         {/* Global Nav Search Bar */}
@@ -171,6 +155,53 @@ export default function Navbar() {
             </>
           ) : (
             <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    data-testid="nav-menu-trigger"
+                    className="flex items-center gap-1.5 border border-[#27272a] bg-black px-3 py-1.5 font-mono text-xs uppercase tracking-widest text-zinc-300 hover:border-[#e5ff00] hover:text-[#e5ff00] transition-colors"
+                  >
+                    <span>MENU</span>
+                    <ChevronDown className="h-3 w-3 text-zinc-500" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  sideOffset={6}
+                  data-testid="nav-menu-content"
+                  className="w-48 border-[#27272a] bg-[#050505] p-0 animate-in fade-in-50 duration-100"
+                  style={{ borderRadius: 0 }}
+                >
+                  <DropdownMenuItem asChild style={{ borderRadius: 0 }}>
+                    <Link
+                      to="/"
+                      data-testid="nav-browse"
+                      className="flex cursor-pointer items-center gap-2 px-3 py-3 font-mono text-xs uppercase tracking-widest text-zinc-200 hover:bg-[#0f0f0f] focus:bg-[#0f0f0f] focus:text-white"
+                    >
+                      BROWSE
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild style={{ borderRadius: 0 }}>
+                    <Link
+                      to="/directory"
+                      data-testid="nav-directory"
+                      className="flex cursor-pointer items-center gap-2 px-3 py-3 font-mono text-xs uppercase tracking-widest text-zinc-200 hover:bg-[#0f0f0f] focus:bg-[#0f0f0f] focus:text-white"
+                    >
+                      DIRECTORY
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild style={{ borderRadius: 0 }}>
+                    <Link
+                      to="/lounge"
+                      data-testid="nav-lounge"
+                      className="flex cursor-pointer items-center gap-2 px-3 py-3 font-mono text-xs uppercase tracking-widest text-zinc-200 hover:bg-[#0f0f0f] focus:bg-[#0f0f0f] focus:text-white"
+                    >
+                      THE LOUNGE
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <Link to="/login" data-testid="nav-login" className="btn-ghost">
                 LOGIN
               </Link>
@@ -248,6 +279,28 @@ function UserMenu({ user, onLogout }) {
           testid="user-menu-profile"
         >
           PROFILE SETTINGS
+        </MenuLink>
+        <DropdownMenuSeparator className="my-0 bg-[#27272a]" />
+        <MenuLink
+          to="/"
+          icon={<Compass className="h-3.5 w-3.5" />}
+          testid="user-menu-browse"
+        >
+          BROWSE
+        </MenuLink>
+        <MenuLink
+          to="/directory"
+          icon={<Layers className="h-3.5 w-3.5" />}
+          testid="user-menu-directory"
+        >
+          DIRECTORY
+        </MenuLink>
+        <MenuLink
+          to="/lounge"
+          icon={<MessageSquare className="h-3.5 w-3.5" />}
+          testid="user-menu-lounge"
+        >
+          THE LOUNGE
         </MenuLink>
         <DropdownMenuSeparator className="my-0 bg-[#27272a]" />
         <DropdownMenuItem
