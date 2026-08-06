@@ -108,7 +108,7 @@ export default function ChannelCard({ channel }) {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
         <div className="absolute left-3 top-3 flex items-center gap-2">
-          {channel.is_live ? (
+          {Boolean(channel.is_live || channel.isLive) ? (
             <span className="live-badge">
               <span className="dot live-dot" /> LIVE
             </span>
@@ -116,7 +116,7 @@ export default function ChannelCard({ channel }) {
             <span className="chip">OFFLINE</span>
           )}
         </div>
-        {channel.is_live && (
+        {Boolean(channel.is_live || channel.isLive) && (
           <div className="absolute right-3 top-3 flex items-center gap-1 bg-black/80 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-white">
             <Eye className="h-3 w-3" />
             {channel.viewer_count || 0}

@@ -46,17 +46,37 @@ try {
 
 async function updateFirestoreChannelLiveStatus(isLive: boolean) {
   try {
+    const nowIso = new Date().toISOString();
+    
+    // Update in-memory channel to ensure REST API is instantly in sync
+    const masterChan = db.channels.get("djsparkz") || db.channels.get("nsU1v44XFnN3FloJvNePqj6cBG2");
+    if (masterChan) {
+      masterChan.is_live = isLive;
+      masterChan.isLive = isLive;
+      masterChan.last_updated = nowIso;
+      if (isLive) {
+        masterChan.stream_started_at = masterChan.stream_started_at || nowIso;
+      } else {
+        masterChan.stream_started_at = null;
+      }
+    }
+
     if (dbFirestore) {
       const primaryDocId = "nsU1v44XFnN3FloJvNePqj6cBG2";
-      const nowIso = new Date().toISOString();
       
-      const updatePayload = {
+      const updatePayload: Record<string, any> = {
         is_live: isLive,
         isLive: isLive,
         last_updated: nowIso,
       };
 
-      // Update both document keys to cover all lookup types
+      if (isLive) {
+        updatePayload.stream_started_at = masterChan?.stream_started_at || nowIso;
+      } else {
+        updatePayload.stream_started_at = null;
+      }
+
+      // Update both document keys to cover all lookup types in Firestore
       await dbFirestore.collection("channels").doc(primaryDocId).set(updatePayload, { merge: true });
       await dbFirestore.collection("channels").doc("djsparkz").set(updatePayload, { merge: true });
       
@@ -343,14 +363,40 @@ async function syncMasterChannelLiveStatus(force = false) {
   try {
     const channel = await getMasterChannel();
     const client = getIvsClient();
+    
+    let isLive = channel.is_live;
+    let checkedAws = false;
+
     if (client && channel?.ivs_channel_arn && !channel.ivs_channel_arn.includes("fallback")) {
-      const response = await client.send(new GetStreamCommand({ channelArn: channel.ivs_channel_arn }));
-      const isLive = !!response.stream;
-      if (channel.is_live !== isLive) {
-        channel.is_live = isLive;
-        await updateFirestoreChannelLiveStatus(isLive);
-        console.log(`[IVS Sync] Auto-synced live status to ${isLive} for ${channel.username}`);
+      try {
+        const response = await client.send(new GetStreamCommand({ channelArn: channel.ivs_channel_arn }));
+        isLive = !!response.stream;
+        checkedAws = true;
+      } catch (err: any) {
+        console.error("[IVS Sync] AWS stream check failed, falling back to Firestore status:", err.message);
       }
+    }
+
+    // Fall back to Firestore status to preserve webhook/dashboard-created streams
+    if (!checkedAws && dbFirestore) {
+      try {
+        const docSnap = await dbFirestore.collection("channels").doc("djsparkz").get();
+        if (docSnap.exists) {
+          const fsData = docSnap.data();
+          if (fsData && fsData.is_live !== undefined) {
+            isLive = Boolean(fsData.is_live || fsData.isLive);
+          }
+        }
+      } catch (fsErr: any) {
+        console.warn("[IVS Sync] Failed to read fallback live status from Firestore:", fsErr.message);
+      }
+    }
+
+    if (channel.is_live !== isLive) {
+      channel.is_live = isLive;
+      channel.isLive = isLive;
+      await updateFirestoreChannelLiveStatus(isLive);
+      console.log(`[IVS Sync] Auto-synced live status to ${isLive} for ${channel.username}`);
     }
   } catch (err: any) {
     console.error("[IVS Sync] Error syncing live status:", err.message);

@@ -26,6 +26,8 @@ export default function Channel() {
 
   useLivepeerAutoPoll(username);
 
+  const isLive = Boolean(channel?.is_live || channel?.isLive);
+
   const channelImage = channel?.photo_url
     ? fileUrl(channel.photo_url)
     : channel?.banner_url
@@ -135,7 +137,7 @@ export default function Channel() {
   }, [username, user?.uid]);
 
   useEffect(() => {
-    if (!channel?.is_live) return;
+    if (!isLive) return;
     let cancelled = false;
     const beat = async () => {
       try {
@@ -153,7 +155,7 @@ export default function Channel() {
       cancelled = true;
       clearInterval(t);
     };
-  }, [channel?.is_live, username]);
+  }, [isLive, username]);
 
   if (notFound) {
     return (
@@ -191,18 +193,18 @@ export default function Channel() {
 
       <div className="grid gap-6 lg:grid-cols-12">
         <div className="lg:col-span-8 flex flex-col gap-6">
-          <HlsPlayer playbackId={channel.playback_id} isLive={channel.is_live} />
+          <HlsPlayer playbackId={channel.playback_id} isLive={isLive} />
 
           <div className="border border-[#27272a] bg-[#0a0a0a] p-6">
             <div className="flex flex-col items-start justify-between gap-4 lg:flex-row lg:items-center">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  {channel.is_live && (
+                  {isLive && (
                     <span className="live-badge">
                       <span className="dot live-dot" /> LIVE
                     </span>
                   )}
-                  {channel.is_live && channel.stream_started_at && (
+                  {isLive && channel.stream_started_at && (
                     <span
                       className="inline-flex items-center gap-1.5 border border-[#27272a] px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-[#e5ff00]"
                       data-testid="live-duration-badge"
@@ -219,7 +221,7 @@ export default function Channel() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <UserLocationTime />
-                {channel.is_live && (
+                {isLive && (
                   <div className="flex items-center gap-2 border border-[#27272a] px-3 py-2">
                     <Eye className="h-4 w-4 text-[#e5ff00]" />
                     <span className="font-mono text-sm font-bold" data-testid="viewer-count">
@@ -337,7 +339,7 @@ export default function Channel() {
           <div className="border border-[#27272a] bg-[#0a0a0a] p-6">
             <div className="label-caps">// STREAM INFO</div>
             <dl className="mt-4 space-y-3 font-mono text-xs">
-              <Row label="STATUS">{channel.is_live ? "LIVE" : "OFF AIR"}</Row>
+              <Row label="STATUS">{isLive ? "LIVE" : "OFF AIR"}</Row>
               <Row label="CATEGORY">{channel.category}</Row>
               <Row label="VIEWERS">
                 <span className="inline-flex items-center gap-1.5">

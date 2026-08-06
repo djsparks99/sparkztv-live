@@ -450,7 +450,7 @@ function getCleanUsername(channel) {
 function StreamerCard({ channel }) {
   const [imageError, setImageError] = useState(false);
   const cleanUsername = getCleanUsername(channel);
-  const isLive = Boolean(channel.is_live);
+  const isLive = Boolean(channel.is_live || channel.isLive);
   const nextSet = Array.isArray(channel.schedule) && channel.schedule.length > 0 ? channel.schedule[0] : null;
   const channelSlug = cleanUsername;
 

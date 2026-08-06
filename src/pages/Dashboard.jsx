@@ -249,6 +249,8 @@ export default function Dashboard() {
     );
   }
 
+  const isLive = Boolean(channel?.is_live || channel?.isLive);
+
   return (
     <div className="mx-auto max-w-[1440px] px-6 pt-8 pb-24 sm:pb-28 lg:pb-32" data-testid="dashboard-page">
       <header className="mb-8 flex flex-col items-start justify-between gap-4 border-b border-[#27272a] pb-6 sm:flex-row sm:items-end">
@@ -269,7 +271,7 @@ export default function Dashboard() {
           >
             <Zap className="h-3 w-3" /> SIGNAL AUTO-DETECT ACTIVE
           </span>
-          {channel.is_live ? (
+          {isLive ? (
             <span className="live-badge">
               <span className="dot live-dot" /> ON AIR
             </span>
@@ -285,14 +287,14 @@ export default function Dashboard() {
           <div className="mb-3 flex items-center justify-between">
             <div className="label-caps">// PREVIEW</div>
             <div className="flex items-center gap-2">
-              {channel.is_live ? (
+              {isLive ? (
                 <span className="live-badge">
                   <span className="dot live-dot" /> ON AIR
                 </span>
               ) : (
                 <span className="chip">OFF AIR</span>
               )}
-              {channel.is_live && channel.stream_started_at && (
+              {isLive && channel.stream_started_at && (
                 <span
                   className="inline-flex items-center gap-1.5 border border-[#e5ff00] px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-[#e5ff00]"
                   data-testid="dashboard-live-duration"
@@ -306,7 +308,7 @@ export default function Dashboard() {
               </span>
             </div>
           </div>
-          {channel.is_live ? (
+          {isLive ? (
             <HlsPlayer playbackId={channel.playback_id} isLive={true} />
           ) : (
             <HlsPlayer playbackId={channel.playback_id} isLive={false} />
