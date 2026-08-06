@@ -970,6 +970,7 @@ async function startServer() {
       const host = req.get("host") || "sparkztv.live";
 
       let title = "SPARKZ.TV // Your Stream, Your Mix, Your Rules";
+      let description = "Decentralized broadcast protocol. No censorship. Full control. Watch live streams from the world's best underground DJs.";
       let image = `${protocol}://${host}/og-image.jpg`;
       const url = `${protocol}://${host}${req.originalUrl}`;
 
@@ -991,6 +992,7 @@ async function startServer() {
 
           if (matchedChannel) {
             title = `${matchedChannel.display_name || matchedChannel.username} // ${matchedChannel.stream_title || "Live Stream"}`;
+            description = `Watch ${matchedChannel.display_name || matchedChannel.username} live streaming ${matchedChannel.category || 'music'} on SPARKZ.TV. "${matchedChannel.stream_title || 'Join the Signal.'}"`;
             
             let rawPhoto = matchedChannel.photo_url || matchedChannel.thumbnail_url;
             if (rawPhoto) {
@@ -1023,12 +1025,17 @@ async function startServer() {
       };
 
       const escapedTitle = escapeHtml(title);
+      const escapedDescription = escapeHtml(description);
       const escapedImage = escapeHtml(image);
       const escapedUrl = escapeHtml(url);
 
       html = html.replace(/<title>.*?<\/title>/gi, `<title>${escapedTitle}</title>`);
       html = html.replace(/<meta\s+property="og:title"\s+content="[^"]*"\s*\/?>/gi, `<meta property="og:title" content="${escapedTitle}" />`);
       html = html.replace(/<meta\s+name="twitter:title"\s+content="[^"]*"\s*\/?>/gi, `<meta name="twitter:title" content="${escapedTitle}" />`);
+
+      html = html.replace(/<meta\s+name="description"\s+content="[^"]*"\s*\/?>/gi, `<meta name="description" content="${escapedDescription}" />`);
+      html = html.replace(/<meta\s+property="og:description"\s+content="[^"]*"\s*\/?>/gi, `<meta property="og:description" content="${escapedDescription}" />`);
+      html = html.replace(/<meta\s+name="twitter:description"\s+content="[^"]*"\s*\/?>/gi, `<meta name="twitter:description" content="${escapedDescription}" />`);
 
       html = html.replace(/<meta\s+property="og:image"\s+content="[^"]*"\s*\/?>/gi, `<meta property="og:image" content="${escapedImage}" />`);
       html = html.replace(/<meta\s+name="twitter:image"\s+content="[^"]*"\s*\/?>/gi, `<meta name="twitter:image" content="${escapedImage}" />`);
