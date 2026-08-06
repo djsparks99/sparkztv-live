@@ -32,7 +32,7 @@ export default function Channel() {
     ? fileUrl(channel.photo_url)
     : channel?.banner_url
     ? fileUrl(channel.banner_url)
-    : "/og-image.png";
+    : "/og-image.jpg";
 
   const channelTitle = channel
     ? `${channel.display_name || channel.username} (@${channel.username}) — Sparkz.TV`

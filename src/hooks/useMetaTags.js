@@ -3,7 +3,7 @@ import { useEffect } from "react";
 export function setMetaTags({
   title = "Sparkz.TV — Underground Live Streaming",
   description = "Discover the finest underground music streams. Join the Signal.",
-  image = "/og-image.png",
+  image = "/og-image.jpg",
   url = typeof window !== "undefined" ? window.location.href : "https://sparkz.tv",
   type = "website",
 } = {}) {

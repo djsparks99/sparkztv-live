@@ -970,7 +970,7 @@ async function startServer() {
       const host = req.get("host") || "sparkztv.live";
 
       let title = "SPARKZ.TV // Your Stream, Your Mix, Your Rules";
-      let image = `${protocol}://${host}/og-image.png`;
+      let image = `${protocol}://${host}/og-image.jpg`;
       const url = `${protocol}://${host}${req.originalUrl}`;
 
       if (req.path.startsWith("/channel/")) {
@@ -1007,7 +1007,7 @@ async function startServer() {
                 image = `${protocol}://${host}${cleanPhoto.startsWith("/") ? "" : "/"}${cleanPhoto}`;
               }
             } else {
-              image = `${protocol}://${host}/og-image.png`;
+              image = `${protocol}://${host}/og-image.jpg`;
             }
           }
         }

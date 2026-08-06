@@ -41,7 +41,7 @@ export default function Browse() {
   useMetaTags({
     title: "Sparkz.TV — Underground Live Streaming",
     description: "Discover the finest underground music streams. Join the Signal.",
-    image: "/og-image.png",
+    image: "/og-image.jpg",
   });
 
   useEffect(() => {
