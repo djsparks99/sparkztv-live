@@ -63,6 +63,9 @@ export default function Footer() {
             <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-500 max-w-md">
               High-bandwidth decentralized live video streaming for underground creators, DJs, and electronic broadcasts.
             </p>
+            <div className="pt-1 font-mono text-xs text-zinc-400">
+              Support Email: <a href="mailto:support@sparkztv.com" className="text-[#e5ff00] hover:underline">support@sparkztv.com</a>
+            </div>
           </div>
 
           {/* Navigation Links */}
